@@ -1,9 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 interface RestaurantConfig {
-  restaurant_name: string;
+  restaurantName: string;
   currency: string;
-  tax_rate: string;
+  taxRate: number;
 }
 
 interface ConfigContextType {
@@ -22,9 +22,9 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return JSON.parse(savedConfig);
     }
     return {
-      restaurant_name: 'Mi Restaurante',
+      restaurantName: 'Mi Restaurante',
       currency: 'MXN',
-      tax_rate: '16',
+      taxRate: 0.16,
     };
   });
 
@@ -44,7 +44,7 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const getTaxRate = () => {
-    return parseFloat(config.tax_rate) / 100;
+    return config.taxRate;
   };
 
   const value: ConfigContextType = {

@@ -37,8 +37,20 @@ const TableComponent: React.FC<TableComponentProps> = ({
   scale = 1
 }) => {
   const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [currentPosition, setCurrentPosition] = useState({ 
+    x: isNaN(table.x) ? 100 : table.x, 
+    y: isNaN(table.y) ? 100 : table.y 
+  });
   const tableRef = useRef<HTMLDivElement>(null);
+
+  // Actualizar posición cuando cambia la prop table
+  useEffect(() => {
+    setCurrentPosition({ 
+      x: isNaN(table.x) ? 100 : table.x, 
+      y: isNaN(table.y) ? 100 : table.y 
+    });
+  }, [table.x, table.y]);
 
   const getStatusColor = () => {
     switch (table.status) {
@@ -73,13 +85,10 @@ const TableComponent: React.FC<TableComponentProps> = ({
     e.stopPropagation();
     
     setIsDragging(true);
-    const rect = tableRef.current?.getBoundingClientRect();
-    if (rect) {
-      setDragOffset({
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top
-      });
-    }
+    setDragStart({
+      x: e.clientX - currentPosition.x * scale,
+      y: e.clientY - currentPosition.y * scale
+    });
     onDragStart?.(table);
   };
 
@@ -87,20 +96,42 @@ const TableComponent: React.FC<TableComponentProps> = ({
     if (!isDragging || !isDraggable) return;
     e.preventDefault();
     
-    const canvas = document.querySelector('.relative') as HTMLElement;
-    if (canvas) {
-      const rect = canvas.getBoundingClientRect();
-      const x = Math.max(0, (e.clientX - rect.left - dragOffset.x) / scale);
-      const y = Math.max(0, (e.clientY - rect.top - dragOffset.y) / scale);
-      onDragEnd?.(table, x, y);
+    const container = document.querySelector('.relative') as HTMLElement;
+    if (!container) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const containerWidth = containerRect.width;
+    const containerHeight = containerRect.height;
+    
+    // Calcular nueva posición basada en el mouse
+    const newX = (e.clientX - dragStart.x) / scale;
+    const newY = (e.clientY - dragStart.y) / scale;
+    
+    // Aplicar límites para mantener la mesa dentro del contenedor
+    const maxX = (containerWidth - size) / scale;
+    const maxY = (containerHeight - size) / scale;
+    
+    const clampedX = Math.max(0, Math.min(newX, maxX));
+    const clampedY = Math.max(0, Math.min(newY, maxY));
+    
+    // Validar que no sean NaN antes de actualizar
+    if (!isNaN(clampedX) && !isNaN(clampedY)) {
+      setCurrentPosition({ x: clampedX, y: clampedY });
     }
   };
 
   const handleMouseUp = () => {
     if (isDragging) {
       setIsDragging(false);
+      // Validar coordenadas antes de enviar al componente padre
+      const finalX = isNaN(currentPosition.x) ? 100 : currentPosition.x;
+      const finalY = isNaN(currentPosition.y) ? 100 : currentPosition.y;
+      console.log('TableComponent onDragEnd:', { tableId: table.id, finalX, finalY });
+      onDragEnd?.(table, finalX, finalY);
     }
   };
+
+  const size = 80 * scale;
 
   useEffect(() => {
     if (isDragging) {
@@ -111,9 +142,7 @@ const TableComponent: React.FC<TableComponentProps> = ({
         document.removeEventListener('mouseup', handleMouseUp);
       };
     }
-  }, [isDragging, dragOffset, table, isDraggable, scale, onDragEnd]);
-
-  const size = 80 * scale;
+  }, [isDragging, dragStart, scale, size, currentPosition]);
 
   return (
     <div
@@ -122,10 +151,12 @@ const TableComponent: React.FC<TableComponentProps> = ({
         isSelected ? 'ring-4 ring-primary-500' : ''
       }`}
       style={{
-        left: table.x * scale,
-        top: table.y * scale,
+        left: isNaN(currentPosition.x) ? 100 : currentPosition.x * scale,
+        top: isNaN(currentPosition.y) ? 100 : currentPosition.y * scale,
         width: size,
         height: size,
+        cursor: isDraggable ? (isDragging ? 'grabbing' : 'grab') : 'pointer',
+        zIndex: isDragging ? 1000 : 1,
       }}
       onClick={(e) => {
         e.stopPropagation();
@@ -135,9 +166,7 @@ const TableComponent: React.FC<TableComponentProps> = ({
     >
       {/* Mesa circular */}
       <div
-        className={`w-full h-full rounded-full border-2 shadow-lg flex flex-col items-center justify-center relative ${getStatusColor()} ${
-          isDraggable ? 'cursor-move' : 'cursor-pointer'
-        } hover:shadow-xl transition-shadow`}
+        className={`w-full h-full rounded-full border-2 shadow-lg flex flex-col items-center justify-center relative ${getStatusColor()} hover:shadow-xl transition-shadow`}
       >
         {/* Número de mesa */}
         <div className="text-lg font-bold">

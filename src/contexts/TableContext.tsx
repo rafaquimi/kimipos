@@ -219,9 +219,15 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 	};
 
 	const updateTablePosition = (tableId: string, x: number, y: number) => {
+		// Validar que las coordenadas sean números válidos
+		const validX = isNaN(x) ? 100 : x;
+		const validY = isNaN(y) ? 100 : y;
+		
+		console.log('updateTablePosition called:', { tableId, x, y, validX, validY });
+		
 		setSalons(prev => prev.map(s => s.id !== activeSalonId ? s : ({
 			...s,
-			tables: s.tables.map(t => t.id === tableId ? { ...t, x, y } : t)
+			tables: s.tables.map(t => t.id === tableId ? { ...t, x: validX, y: validY } : t)
 		})));
 	};
 

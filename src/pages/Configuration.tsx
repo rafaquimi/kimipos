@@ -84,7 +84,10 @@ const ConfigurationPage: React.FC = () => {
               max="100"
               step="0.01"
               value={configValues.taxRate * 100}
-              onChange={(e) => setConfigValues({ ...configValues, taxRate: parseFloat(e.target.value) / 100 })}
+              onChange={(e) => {
+                const value = Math.max(0, Math.min(100, parseFloat(e.target.value)));
+                setConfigValues({ ...configValues, taxRate: value / 100 });
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
@@ -126,6 +129,7 @@ const ConfigurationPage: React.FC = () => {
     };
 
     const handleTableDragEnd = (tableId: string, x: number, y: number) => {
+      console.log('handleTableDragEnd called:', { tableId, x, y });
       updateTablePosition(tableId, x, y);
     };
 
@@ -209,7 +213,7 @@ const ConfigurationPage: React.FC = () => {
                   key={table.id}
                   table={table}
                   isDraggable={true}
-                  onDragEnd={(x, y) => handleTableDragEnd(table.id, x, y)}
+                  onDragEnd={(table, x, y) => handleTableDragEnd(table.id, x, y)}
                   onDelete={() => handleDeleteTable(table.id)}
                   showDeleteButton={true}
                   scale={1}
