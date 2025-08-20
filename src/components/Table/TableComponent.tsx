@@ -126,7 +126,6 @@ const TableComponent: React.FC<TableComponentProps> = ({
       // Validar coordenadas antes de enviar al componente padre
       const finalX = isNaN(currentPosition.x) ? 100 : currentPosition.x;
       const finalY = isNaN(currentPosition.y) ? 100 : currentPosition.y;
-      console.log('TableComponent onDragEnd:', { tableId: table.id, finalX, finalY });
       onDragEnd?.(table, finalX, finalY);
     }
   };

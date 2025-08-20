@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Settings, Building, Archive, Plus, Save, Trash2, Move, Flower, Coffee } from 'lucide-react';
 import { useTables, SalonData } from '../contexts/TableContext';
 import { useConfig } from '../contexts/ConfigContext';
@@ -8,6 +9,13 @@ import toast from 'react-hot-toast';
 
 const ConfigurationPage: React.FC = () => {
   const [activeSection, setActiveSection] = useState('general');
+  const location = useLocation();
+
+  useEffect(() => {
+    if (location.pathname.includes('/configuration/salons')) {
+      setActiveSection('salons');
+    }
+  }, [location.pathname]);
   const { 
     salons, 
     activeSalonId, 
@@ -36,13 +44,7 @@ const ConfigurationPage: React.FC = () => {
     toast.success('Configuración guardada exitosamente');
   };
 
-  const menuItems = [
-    { id: 'general', name: 'General', icon: Settings },
-    { id: 'salons', name: 'Salones y Mesas', icon: Building },
-    { id: 'products', name: 'Productos', icon: Archive },
-    { id: 'categories', name: 'Categorías', icon: Archive },
-    { id: 'users', name: 'Usuarios', icon: Archive },
-  ];
+  // Menú interno eliminado: el contenido se controla por la ruta
 
   const renderGeneral = () => (
     <div className="space-y-6">
@@ -129,14 +131,13 @@ const ConfigurationPage: React.FC = () => {
     };
 
     const handleTableDragEnd = (tableId: string, x: number, y: number) => {
-      console.log('handleTableDragEnd called:', { tableId, x, y });
       updateTablePosition(tableId, x, y);
     };
 
     const handleAddPlant = () => {
       const newDecor = {
         id: `decor-${Date.now()}`,
-        type: 'plant' as const,
+        kind: 'plant' as const,
         x: 150,
         y: 150
       };
@@ -147,7 +148,7 @@ const ConfigurationPage: React.FC = () => {
     const handleAddBar = () => {
       const newDecor = {
         id: `decor-${Date.now()}`,
-        type: 'bar' as const,
+        kind: 'bar' as const,
         x: 200,
         y: 200
       };
@@ -205,7 +206,7 @@ const ConfigurationPage: React.FC = () => {
         {activeSalon && (
           <div className="flex-1 overflow-hidden">
             <div
-              className="h-full bg-gray-100 relative overflow-auto"
+              className="salon-canvas h-full bg-gray-100 relative overflow-auto"
               style={{ minHeight: '600px' }}
             >
               {tables.map(table => (
@@ -224,7 +225,8 @@ const ConfigurationPage: React.FC = () => {
                 <DecorItem
                   key={item.id}
                   item={item}
-                  onDragEnd={(x, y) => updateDecorPosition(item.id, x, y)}
+                  isDraggable={true}
+                  onDragEnd={(/* d */ _item, x, y) => updateDecorPosition(item.id, x, y)}
                 />
               ))}
             </div>
@@ -236,45 +238,13 @@ const ConfigurationPage: React.FC = () => {
 
   return (
     <div className="h-full bg-gray-50">
-      <div className="h-full flex">
-        <div className="w-64 bg-white border-r border-gray-200">
-          <div className="p-6">
-            <h2 className="text-xl font-semibold text-gray-900">Configuración</h2>
-          </div>
-          <nav className="px-4 space-y-2">
-            {menuItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveSection(item.id)}
-                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left transition-colors ${
-                    activeSection === item.id
-                      ? 'bg-primary-100 text-primary-700'
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  <Icon className="w-5 h-5" />
-                  <span>{item.name}</span>
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-
-        <div className="flex-1 overflow-hidden">
-          {activeSection === 'general' && (
-            <div className="h-full overflow-y-auto p-6">{renderGeneral()}</div>
-          )}
-          {activeSection === 'salons' && (
-            <div className="h-full">{renderSalons()}</div>
-          )}
-          {!['general', 'salons'].includes(activeSection) && (
-            <div className="h-full overflow-y-auto p-6">
-              <div className="card p-6">Próximamente</div>
-            </div>
-          )}
-        </div>
+      <div className="h-full overflow-hidden">
+        {activeSection === 'general' && (
+          <div className="h-full overflow-y-auto p-6">{renderGeneral()}</div>
+        )}
+        {activeSection === 'salons' && (
+          <div className="h-full">{renderSalons()}</div>
+        )}
       </div>
     </div>
   );

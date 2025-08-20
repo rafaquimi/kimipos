@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import Layout from './components/Layout/Layout';
 import Dashboard from './pages/Dashboard';
@@ -12,6 +12,8 @@ import { DatabaseProvider } from './contexts/DatabaseContext';
 import { TableProvider } from './contexts/TableContext';
 import { ConfigProvider } from './contexts/ConfigContext';
 import { ProductProvider } from './contexts/ProductContext';
+import { OnScreenKeyboardProvider } from './contexts/OnScreenKeyboardContext';
+import OnScreenKeyboard from './components/OnScreenKeyboard/OnScreenKeyboard';
 
 const App: React.FC = () => {
   return (
@@ -19,13 +21,9 @@ const App: React.FC = () => {
       <ConfigProvider>
         <ProductProvider>
           <TableProvider>
-          <BrowserRouter
-            future={{
-              v7_startTransition: true,
-              v7_relativeSplatPath: true
-            }}
-          >
-            <Layout>
+            <OnScreenKeyboardProvider>
+              <HashRouter>
+                <Layout>
               <Routes>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/products" element={<Products />} />
@@ -33,6 +31,7 @@ const App: React.FC = () => {
                 <Route path="/tables" element={<Tables />} />
                 <Route path="/orders" element={<Orders />} />
                 <Route path="/configuration" element={<ConfigurationPage />} />
+                <Route path="/configuration/salons" element={<ConfigurationPage />} />
               </Routes>
               <Toaster
                 position="top-right"
@@ -54,8 +53,10 @@ const App: React.FC = () => {
                   },
                 }}
               />
+              <OnScreenKeyboard />
             </Layout>
-          </BrowserRouter>
+          </HashRouter>
+          </OnScreenKeyboardProvider>
           </TableProvider>
         </ProductProvider>
       </ConfigProvider>

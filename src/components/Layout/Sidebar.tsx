@@ -42,7 +42,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     },
     {
       name: 'Mesas y Salones',
-      href: '/tables',
+      href: '/configuration/salons',
       icon: Layout,
       description: 'Editor de salones y mesas'
     },

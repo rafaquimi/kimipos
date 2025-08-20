@@ -1,39 +1,96 @@
 {
   "name": "kimipos",
   "version": "1.0.0",
-  "type": "module",
   "description": "Sistema POS para restaurantes con funcionalidad offline",
-  "main": "index.js",
+  "main": "public/electron.js",
+  "homepage": "./",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "serve": "vite preview"
+    "serve": "vite preview",
+    "electron": "electron .",
+    "electron-dev": "ELECTRON_IS_DEV=true electron .",
+    "build-electron": "npm run build && electron-builder",
+    "dist": "npm run build && electron-builder --publish=never",
+    "package-win": "npm run build && npx electron-packager . KimiPOS --platform=win32 --arch=x64 --out=dist-electron --overwrite --ignore=node_modules/(?!electron)",
+    "package-win-ia32": "npm run build && npx electron-packager . KimiPOS --platform=win32 --arch=ia32 --out=dist-electron --overwrite",
+    "package-all": "npm run build && npx electron-packager . KimiPOS --all --out=dist-electron --overwrite"
   },
   "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-router-dom": "^6.8.0",
-    "dexie": "^3.2.3",
-    "dexie-react-hooks": "^1.1.6",
-    "lucide-react": "^0.263.1",
     "clsx": "^1.2.1",
     "date-fns": "^2.29.3",
+    "dexie": "^3.2.3",
+    "dexie-react-hooks": "^1.1.6",
+    "electron-is-dev": "^3.0.1",
+    "framer-motion": "^10.12.4",
+    "lucide-react": "^0.263.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
     "react-hot-toast": "^2.4.1",
-    "framer-motion": "^10.12.4"
+    "react-router-dom": "^6.8.0"
   },
   "devDependencies": {
     "@types/react": "^18.0.28",
     "@types/react-dom": "^18.0.11",
     "@vitejs/plugin-react": "^4.0.0",
     "autoprefixer": "^10.4.14",
+    "electron": "^37.3.1",
+    "electron-builder": "^26.0.12",
+    "electron-packager": "^17.1.2",
     "postcss": "^8.4.23",
     "tailwindcss": "^3.3.2",
     "typescript": "^5.0.2",
     "vite": "^4.3.2",
     "vite-plugin-pwa": "^0.14.7"
   },
-  "keywords": ["pos", "restaurant", "offline", "react", "typescript"],
+  "keywords": [
+    "pos",
+    "restaurant",
+    "offline",
+    "react",
+    "typescript"
+  ],
   "author": "KimiPOS",
-  "license": "MIT"
+  "license": "MIT",
+  "build": {
+    "appId": "com.kimipos.app",
+    "productName": "KimiPOS",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "dist/**/*",
+      "public/electron.js",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "forceCodeSigning": false
+    },
+    "portable": {
+      "artifactName": "KimiPOS-Portable.exe"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "public/favicon.ico"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "public/favicon.ico"
+    }
+  }
 }

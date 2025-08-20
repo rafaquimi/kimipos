@@ -65,7 +65,15 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 						...t,
 						occupiedSince: t.occupiedSince ? new Date(t.occupiedSince) : undefined
 					})),
-					decor: s.decor || []
+					// Migrar decoraciones antiguas (propiedad "type") a la nueva propiedad "kind"
+					decor: (s.decor || []).map((d: any) => ({
+						id: d.id,
+						kind: (d.kind || d.type) ?? 'plant',
+						x: d.x ?? 100,
+						y: d.y ?? 100,
+						width: d.width,
+						height: d.height,
+					}))
 				}));
 				setSalons(restored);
 			} else {
@@ -193,6 +201,7 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		});
 	};
 
+
 	const getTableById = (tableId: string) => {
 		return activeSalon?.tables.find(t => t.id === tableId);
 	};
@@ -222,8 +231,6 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		// Validar que las coordenadas sean números válidos
 		const validX = isNaN(x) ? 100 : x;
 		const validY = isNaN(y) ? 100 : y;
-		
-		console.log('updateTablePosition called:', { tableId, x, y, validX, validY });
 		
 		setSalons(prev => prev.map(s => s.id !== activeSalonId ? s : ({
 			...s,

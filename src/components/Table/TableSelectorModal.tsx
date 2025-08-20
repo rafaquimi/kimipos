@@ -105,7 +105,7 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
           <div className="p-4 h-[calc(100vh-140px)]">
             <div className="relative bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 h-full overflow-hidden">
               <div className="absolute inset-0 bg-gradient-to-br from-blue-50 to-gray-100">
-                <div className="relative w-full h-full">
+                <div className="salon-canvas relative w-full h-full">
                   {decor.map((item) => (
                     <DecorItem key={item.id} item={item} />
                   ))}
@@ -115,7 +115,7 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
                       table={table}
                       isSelected={selectedTableId === table.id}
                       onClick={handleTableClick}
-                      scale={1.2}
+                      scale={1}
                     />
                   ))}
                 </div>
