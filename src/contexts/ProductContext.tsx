@@ -15,6 +15,7 @@ export interface Product {
 export interface Category {
   id: string;
   name: string;
+  description?: string;
   color: string;
   isActive: boolean;
   createdAt: Date;
@@ -230,6 +231,7 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const newCategory: Category = {
       ...categoryData,
       id: `cat-${Date.now()}`,
+      isActive: categoryData.isActive ?? true, // Asegurar que siempre tenga un valor
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -247,11 +249,10 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const deleteCategory = (id: string) => {
     // Solo permitir eliminar si no hay productos en esta categoría
     const hasProducts = products.some(p => p.categoryId === id);
-    if (!hasProducts) {
-      setCategories(prev => prev.filter(c => c.id !== id));
-      return true;
+    if (hasProducts) {
+      throw new Error('No se puede eliminar una categoría que tiene productos asignados');
     }
-    return false;
+    setCategories(prev => prev.filter(c => c.id !== id));
   };
 
   const getCategoryById = (id: string) => {

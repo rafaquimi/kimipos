@@ -3,7 +3,7 @@ import { X, Receipt, CreditCard, DollarSign, Printer, Download } from 'lucide-re
 import { useConfig } from '../../contexts/ConfigContext';
 
 interface OrderItem {
-  productId: number;
+  productId: string;
   productName: string;
   quantity: number;
   unitPrice: number;

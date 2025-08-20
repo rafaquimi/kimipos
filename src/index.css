@@ -23,7 +23,7 @@
 
 @layer components {
   .btn {
-    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2;
+    @apply px-6 py-4 min-h-[48px] rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 flex items-center justify-center text-base touch-manipulation;
   }
   
   .btn-primary {
@@ -47,7 +47,7 @@
   }
   
   .input {
-    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+    @apply w-full px-4 py-3 min-h-[48px] border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-base touch-manipulation;
   }
   
   .category-card {
@@ -133,4 +133,33 @@
 
 .animate-slide-up {
   animation: slideUp 0.3s ease-out;
+}
+
+/* Mejoras para uso táctil */
+@layer utilities {
+  .touch-target {
+    @apply min-w-[44px] min-h-[44px] flex items-center justify-center;
+  }
+  
+  .touch-area {
+    @apply p-3 rounded-lg transition-colors;
+  }
+  
+  .touch-area:hover {
+    @apply bg-gray-100;
+  }
+  
+  /* Asegurar que los elementos interactivos tengan un tamaño mínimo */
+  button:not(.btn) {
+    @apply min-w-[44px] min-h-[44px] touch-manipulation;
+  }
+  
+  input, select, textarea {
+    @apply min-h-[48px] touch-manipulation;
+  }
+  
+  /* Mejorar el contraste en elementos táctiles */
+  .touch-highlight {
+    @apply active:bg-gray-200 active:scale-95 transition-all duration-150;
+  }
 }

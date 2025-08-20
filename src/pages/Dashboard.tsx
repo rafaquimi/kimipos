@@ -180,7 +180,7 @@ const Dashboard: React.FC = () => {
           <div className="flex space-x-2 overflow-x-auto pb-2">
             <button
               onClick={() => setSelectedCategory(null)}
-              className={`px-5 py-3 rounded-xl font-medium whitespace-nowrap transition-all duration-200 shadow-sm ${
+              className={`px-6 py-4 rounded-xl font-medium whitespace-nowrap transition-all duration-200 shadow-sm min-h-[56px] flex items-center justify-center text-base ${
                 selectedCategory === null
                   ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg transform scale-105'
                   : 'bg-white text-gray-700 hover:bg-gray-50 hover:shadow-md border border-gray-200'
@@ -197,7 +197,7 @@ const Dashboard: React.FC = () => {
                   color: selectedCategory === category.id ? 'white' : undefined,
                   borderColor: selectedCategory === category.id ? category.color : undefined
                 }}
-                className={`px-5 py-3 rounded-xl font-medium whitespace-nowrap transition-all duration-200 shadow-sm ${
+                className={`px-6 py-4 rounded-xl font-medium whitespace-nowrap transition-all duration-200 shadow-sm min-h-[56px] flex items-center justify-center text-base ${
                   selectedCategory === category.id
                     ? 'text-white shadow-lg transform scale-105 border-2'
                     : 'bg-white text-gray-700 hover:bg-gray-50 hover:shadow-md border border-gray-200 hover:border-gray-300'
@@ -216,13 +216,13 @@ const Dashboard: React.FC = () => {
               <div
                 key={product.id}
                 onClick={() => addToOrder(product)}
-                className="product-card bg-gradient-to-br from-white via-white to-gray-50/50 hover:from-blue-50 hover:via-white hover:to-indigo-50 cursor-pointer p-5 rounded-2xl shadow-md border border-gray-200/50 hover:border-blue-300 transition-all duration-300 hover:shadow-xl hover:shadow-blue-200/25 hover:scale-105 backdrop-blur-sm"
+                className="product-card bg-gradient-to-br from-white via-white to-gray-50/50 hover:from-blue-50 hover:via-white hover:to-indigo-50 cursor-pointer p-6 rounded-2xl shadow-md border border-gray-200/50 hover:border-blue-300 transition-all duration-300 hover:shadow-xl hover:shadow-blue-200/25 hover:scale-105 backdrop-blur-sm min-h-[120px] flex flex-col justify-center"
               >
                 <div className="text-center">
-                  <h3 className="font-semibold text-gray-900 text-sm mb-2 line-clamp-2">
+                  <h3 className="font-semibold text-gray-900 text-base mb-3 line-clamp-2 leading-tight">
                     {product.name}
                   </h3>
-                  <p className="text-lg font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                  <p className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
                     {getCurrencySymbol()}{product.price.toFixed(2)}
                   </p>
                 </div>
@@ -244,10 +244,10 @@ const Dashboard: React.FC = () => {
             {currentOrder.length > 0 && (
               <button
                 onClick={clearOrder}
-                className="p-2 text-red-600 hover:bg-red-100 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
+                className="p-3 text-red-600 hover:bg-red-100 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md min-w-[48px] min-h-[48px] flex items-center justify-center"
                 title="Limpiar pedido"
               >
-                <Trash2 className="w-4 h-4" />
+                <Trash2 className="w-6 h-6" />
               </button>
             )}
           </div>
@@ -293,7 +293,7 @@ const Dashboard: React.FC = () => {
                     setCurrentOrder([]);
                     setCustomerName('');
                   }}
-                  className="px-3 py-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 text-gray-500 hover:text-red-500 hover:border-red-300 shadow-sm hover:shadow-md"
+                  className="px-4 py-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 text-gray-500 hover:text-red-500 hover:border-red-300 shadow-sm hover:shadow-md min-w-[48px] min-h-[48px] flex items-center justify-center text-lg font-bold"
                   title="Limpiar selección de mesa"
                 >
                   ✕
@@ -320,28 +320,28 @@ const Dashboard: React.FC = () => {
                       <h4 className="font-medium text-gray-900 text-sm">{item.productName}</h4>
                                              <p className="text-sm text-gray-600">{getCurrencySymbol()}{item.unitPrice.toFixed(2)} c/u</p>
                     </div>
-                    <button
-                      onClick={() => removeFromOrder(item.productId)}
-                      className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-all duration-200 hover:scale-110"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
+                                      <button
+                    onClick={() => removeFromOrder(item.productId)}
+                    className="p-3 text-red-600 hover:bg-red-100 rounded-lg transition-all duration-200 hover:scale-110 min-w-[44px] min-h-[44px] flex items-center justify-center"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
                   </div>
                   
                   <div className="flex items-center justify-between mt-2">
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-3">
                       <button
                         onClick={() => updateQuantity(item.productId, -1)}
-                        className="p-2 rounded-lg bg-gray-200 hover:bg-blue-500 hover:text-white transition-all duration-200 hover:scale-110"
+                        className="p-3 rounded-lg bg-gray-200 hover:bg-blue-500 hover:text-white transition-all duration-200 hover:scale-110 min-w-[44px] min-h-[44px] flex items-center justify-center"
                       >
-                        <Minus className="w-3 h-3" />
+                        <Minus className="w-5 h-5" />
                       </button>
-                      <span className="w-8 text-center font-semibold text-gray-800">{item.quantity}</span>
+                      <span className="w-12 text-center font-semibold text-gray-800 text-lg">{item.quantity}</span>
                       <button
                         onClick={() => updateQuantity(item.productId, 1)}
-                        className="p-2 rounded-lg bg-gray-200 hover:bg-blue-500 hover:text-white transition-all duration-200 hover:scale-110"
+                        className="p-3 rounded-lg bg-gray-200 hover:bg-blue-500 hover:text-white transition-all duration-200 hover:scale-110 min-w-[44px] min-h-[44px] flex items-center justify-center"
                       >
-                        <Plus className="w-3 h-3" />
+                        <Plus className="w-5 h-5" />
                       </button>
                     </div>
                     <span className="font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">

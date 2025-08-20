@@ -17,6 +17,8 @@ const Tables: React.FC = () => {
   const [isSalonModalOpen, setIsSalonModalOpen] = useState(false);
   const [editingTable, setEditingTable] = useState<Table | null>(null);
   const [editingSalon, setEditingSalon] = useState<Salon | null>(null);
+  const [draggedTable, setDraggedTable] = useState<Table | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   // Form states
   const [tableFormData, setTableFormData] = useState({
@@ -100,6 +102,20 @@ const Tables: React.FC = () => {
       console.error('Error saving table:', error);
       toast.error('Error al guardar la mesa');
     }
+  };
+
+  const openTableModal = () => {
+    setEditingTable(null);
+    setTableFormData({
+      number: '',
+      name: '',
+      capacity: '',
+      x: 50 + Math.random() * 200, // Posición aleatoria para evitar solapamiento
+      y: 50 + Math.random() * 200,
+      width: 80,
+      height: 80
+    });
+    setIsTableModalOpen(true);
   };
 
   const handleEditTable = (table: Table) => {
@@ -232,6 +248,56 @@ const Tables: React.FC = () => {
     }
   };
 
+  // Funciones de arrastre
+  const handleDragStart = (e: React.DragEvent, table: Table) => {
+    setDraggedTable(table);
+    setIsDragging(true);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', '');
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    if (!draggedTable) return;
+
+    try {
+      // Obtener la posición relativa al contenedor
+      const container = e.currentTarget as HTMLElement;
+      const rect = container.getBoundingClientRect();
+      const x = e.clientX - rect.left - 40; // Centrar la mesa (40px es la mitad del ancho)
+      const y = e.clientY - rect.top - 40;  // Centrar la mesa (40px es la mitad del alto)
+
+      // Asegurar que la mesa no se salga del contenedor
+      const maxX = rect.width - 80;  // Ancho del contenedor menos el ancho de la mesa
+      const maxY = rect.height - 80; // Alto del contenedor menos el alto de la mesa
+      
+      const finalX = Math.max(0, Math.min(x, maxX));
+      const finalY = Math.max(0, Math.min(y, maxY));
+
+      // Actualizar la posición en la base de datos
+      await db.tables.update(draggedTable.id!, {
+        x: finalX,
+        y: finalY,
+        updatedAt: new Date(),
+        syncStatus: 'pending'
+      });
+
+      toast.success('Posición de mesa actualizada');
+    } catch (error) {
+      console.error('Error updating table position:', error);
+      toast.error('Error al actualizar la posición de la mesa');
+    } finally {
+      setDraggedTable(null);
+    }
+  };
+
   return (
     <div className="h-full flex flex-col bg-gray-50">
       {/* Header */}
@@ -244,17 +310,17 @@ const Tables: React.FC = () => {
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setIsSalonModalOpen(true)}
-              className="btn btn-secondary flex items-center space-x-2"
+              className="btn btn-secondary flex items-center space-x-2 px-6 py-4 min-h-[48px] text-base font-medium"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-5 h-5" />
               <span>Nuevo Salón</span>
             </button>
             <button
-              onClick={() => setIsTableModalOpen(true)}
+              onClick={openTableModal}
               disabled={!selectedSalon}
-              className="btn btn-primary flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn btn-primary flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed px-6 py-4 min-h-[48px] text-base font-medium"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-5 h-5" />
               <span>Nueva Mesa</span>
             </button>
           </div>
@@ -278,10 +344,10 @@ const Tables: React.FC = () => {
           {selectedSalonData && (
             <button
               onClick={() => handleEditSalon(selectedSalonData)}
-              className="p-2 text-blue-600 hover:bg-blue-100 rounded transition-colors"
+              className="p-3 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
               title="Editar salón"
             >
-              <Edit className="w-4 h-4" />
+              <Edit className="w-5 h-5" />
             </button>
           )}
         </div>
@@ -294,23 +360,42 @@ const Tables: React.FC = () => {
             {/* Editor visual */}
             <div className="flex-1 bg-white m-4 rounded-lg border border-gray-200 relative overflow-auto">
               <div className="absolute inset-0 p-4">
-                <div className="w-full h-full relative bg-gray-50 rounded border-2 border-dashed border-gray-300">
+                <div 
+                  className={`w-full h-full relative bg-gray-50 rounded border-2 border-dashed border-gray-300 ${isDragging ? 'bg-blue-50 border-blue-300' : ''}`}
+                  onDragOver={handleDragOver}
+                  onDrop={handleDrop}
+                >
                   {tables?.map((table) => (
                     <div
                       key={table.id}
-                      className={`absolute rounded-lg border-2 cursor-pointer transition-all duration-200 flex items-center justify-center text-xs font-medium select-none ${getStatusColor(table.status)}`}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, table)}
+                      className={`absolute rounded-lg border-2 cursor-move transition-all duration-200 flex items-center justify-center text-xs font-medium select-none ${getStatusColor(table.status)} ${draggedTable?.id === table.id ? 'opacity-50' : ''} hover:shadow-lg hover:scale-105`}
                       style={{
                         left: table.x,
                         top: table.y,
-                        width: table.width,
-                        height: table.height
+                        width: table.width || 80,
+                        height: table.height || 80
                       }}
-                      onClick={() => handleEditTable(table)}
-                      title={`Mesa ${table.number} - ${table.name} (${getStatusText(table.status)})`}
+                      onDoubleClick={() => handleEditTable(table)}
+                      title={`Mesa ${table.number} - ${table.name} (${getStatusText(table.status)}) - Arrastra para mover, doble clic para editar`}
                     >
-                      <div className="text-center">
+                      <div className="text-center pointer-events-none">
                         <div className="font-semibold">{table.number}</div>
                         <div className="text-xs opacity-75">{table.name}</div>
+                      </div>
+                      
+                      {/* Botón de eliminar */}
+                      <div className="absolute -top-2 -right-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteTable(table);
+                          }}
+                          className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center bg-white shadow-sm border border-gray-200"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -322,6 +407,17 @@ const Tables: React.FC = () => {
                         <p className="text-lg font-medium">Sin mesas en este salón</p>
                         <p className="text-sm">Haz clic en "Nueva Mesa" para agregar una</p>
                       </div>
+                    </div>
+                  )}
+                  
+                  {tables && tables.length > 0 && (
+                    <div className="absolute top-2 left-2 bg-blue-100 border border-blue-300 rounded-lg p-3 text-blue-800 text-sm max-w-xs">
+                      <div className="font-medium mb-1">💡 Cómo usar el editor:</div>
+                      <ul className="text-xs space-y-1">
+                        <li>• <strong>Arrastra</strong> las mesas para moverlas</li>
+                        <li>• <strong>Doble clic</strong> para editar una mesa</li>
+                        <li>• <strong>Clic en ❌</strong> para eliminar</li>
+                      </ul>
                     </div>
                   )}
                 </div>
@@ -396,9 +492,9 @@ const Tables: React.FC = () => {
                                   e.stopPropagation();
                                   handleDeleteTable(table);
                                 }}
-                                className="p-1 text-red-600 hover:bg-red-100 rounded transition-colors"
+                                className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
                               >
-                                <Trash2 className="w-3 h-3" />
+                                <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
                           </div>
@@ -424,7 +520,7 @@ const Tables: React.FC = () => {
               {salons?.length === 0 && (
                 <button
                   onClick={() => setIsSalonModalOpen(true)}
-                  className="btn btn-primary"
+                  className="btn btn-primary px-6 py-4 min-h-[48px] text-base font-medium"
                 >
                   Crear Primer Salón
                 </button>
@@ -444,7 +540,7 @@ const Tables: React.FC = () => {
               </h2>
               <button
                 onClick={closeTableModal}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 p-3 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors"
               >
                 <Plus className="w-6 h-6 transform rotate-45" />
               </button>
@@ -528,11 +624,11 @@ const Tables: React.FC = () => {
                 <button
                   type="button"
                   onClick={closeTableModal}
-                  className="flex-1 btn btn-secondary"
+                  className="flex-1 btn btn-secondary px-6 py-4 min-h-[48px] text-base font-medium"
                 >
                   Cancelar
                 </button>
-                <button type="submit" className="flex-1 btn btn-primary">
+                <button type="submit" className="flex-1 btn btn-primary px-6 py-4 min-h-[48px] text-base font-medium">
                   {editingTable ? 'Actualizar' : 'Crear'}
                 </button>
               </div>
@@ -551,7 +647,7 @@ const Tables: React.FC = () => {
               </h2>
               <button
                 onClick={closeSalonModal}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 p-3 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors"
               >
                 <Plus className="w-6 h-6 transform rotate-45" />
               </button>
@@ -589,11 +685,11 @@ const Tables: React.FC = () => {
                 <button
                   type="button"
                   onClick={closeSalonModal}
-                  className="flex-1 btn btn-secondary"
+                  className="flex-1 btn btn-secondary px-6 py-4 min-h-[48px] text-base font-medium"
                 >
                   Cancelar
                 </button>
-                <button type="submit" className="flex-1 btn btn-primary">
+                <button type="submit" className="flex-1 btn btn-primary px-6 py-4 min-h-[48px] text-base font-medium">
                   {editingSalon ? 'Actualizar' : 'Crear'}
                 </button>
               </div>

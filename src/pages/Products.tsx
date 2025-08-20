@@ -136,9 +136,9 @@ const Products: React.FC = () => {
           </div>
           <button
             onClick={() => openModal()}
-            className="btn btn-primary flex items-center space-x-2"
+            className="btn btn-primary flex items-center space-x-2 px-6 py-4 min-h-[48px] text-base font-medium"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-5 h-5" />
             <span>Nuevo Producto</span>
           </button>
         </div>
@@ -259,24 +259,24 @@ const Products: React.FC = () => {
                         <div className="flex items-center justify-end space-x-2">
                           <button
                             onClick={() => toggleStatus(product)}
-                            className="p-1 text-gray-400 hover:text-gray-600"
+                            className="p-3 text-gray-400 hover:text-gray-600 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors"
                             title={product.isActive ? 'Desactivar' : 'Activar'}
                           >
-                            {product.isActive ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            {product.isActive ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                           </button>
                           <button
                             onClick={() => openModal(product)}
-                            className="p-1 text-blue-600 hover:text-blue-800"
+                            className="p-3 text-blue-600 hover:text-blue-800 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-blue-100 transition-colors"
                             title="Editar"
                           >
-                            <Edit className="w-4 h-4" />
+                            <Edit className="w-5 h-5" />
                           </button>
                           <button
                             onClick={() => handleDelete(product)}
-                            className="p-1 text-red-600 hover:text-red-800"
+                            className="p-3 text-red-600 hover:text-red-800 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-red-100 transition-colors"
                             title="Eliminar"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-5 h-5" />
                           </button>
                         </div>
                       </td>
@@ -307,9 +307,9 @@ const Products: React.FC = () => {
                 </h3>
                 <button
                   onClick={closeModal}
-                  className="p-1 text-gray-400 hover:text-gray-600"
+                  className="p-3 text-gray-400 hover:text-gray-600 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-6 h-6" />
                 </button>
               </div>
 
@@ -395,15 +395,15 @@ const Products: React.FC = () => {
               <div className="flex justify-end space-x-3 mt-6">
                 <button
                   onClick={closeModal}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  className="px-6 py-4 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors min-h-[48px] flex items-center justify-center text-base font-medium"
                 >
                   Cancelar
                 </button>
                 <button
                   onClick={handleSave}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center space-x-2"
+                  className="px-6 py-4 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center space-x-2 min-h-[48px] text-base font-medium"
                 >
-                  <Save className="w-4 h-4" />
+                  <Save className="w-5 h-5" />
                   <span>Guardar</span>
                 </button>
               </div>
