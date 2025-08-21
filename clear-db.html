@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Limpiar Base de Datos</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        button {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 0;
+        }
+        button:hover {
+            background-color: #c82333;
+        }
+        .success {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .error {
+            color: #dc3545;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Limpiar Base de Datos KimiPOS</h1>
+        <p>Este script eliminará la base de datos actual para forzar la actualización a la nueva versión que incluye la tabla de "Cuentas por Nombre".</p>
+        
+        <button onclick="clearDatabase()">Limpiar Base de Datos</button>
+        
+        <div id="result"></div>
+        
+        <div style="margin-top: 30px; padding: 15px; background-color: #e9ecef; border-radius: 5px;">
+            <h3>Después de limpiar la base de datos:</h3>
+            <ol>
+                <li>Ve a la aplicación KimiPOS</li>
+                <li>Selecciona un salón</li>
+                <li>Deberías ver la pestaña "Cuentas por Nombre" junto a "Mesas"</li>
+                <li>Haz clic en "Cuentas por Nombre" para acceder a la nueva funcionalidad</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        function clearDatabase() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p>Limpiando base de datos...</p>';
+            
+            const request = indexedDB.deleteDatabase('KimiPOSDatabase');
+            
+            request.onsuccess = function() {
+                resultDiv.innerHTML = '<p class="success">✅ Base de datos eliminada exitosamente</p>';
+                resultDiv.innerHTML += '<p>Ahora puedes ir a la aplicación KimiPOS y recargar la página para ver la nueva funcionalidad.</p>';
+            };
+            
+            request.onerror = function() {
+                resultDiv.innerHTML = '<p class="error">❌ Error al eliminar la base de datos</p>';
+            };
+            
+            request.onblocked = function() {
+                resultDiv.innerHTML = '<p class="error">❌ La base de datos está bloqueada. Cierra todas las pestañas de la aplicación y vuelve a intentar.</p>';
+            };
+        }
+    </script>
+</body>
+</html>

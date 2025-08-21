@@ -6,15 +6,19 @@ import {
   Trash2, 
   Layout,
   Square,
-  Circle
+  Circle,
+  User,
+  DollarSign
 } from 'lucide-react';
-import { db, PosTable as Table, Salon } from '../database/db';
+import { db, PosTable as Table, Salon, NamedAccount } from '../database/db';
 import toast from 'react-hot-toast';
 
 const Tables: React.FC = () => {
   const [selectedSalon, setSelectedSalon] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<'tables' | 'accounts'>('tables');
   const [isTableModalOpen, setIsTableModalOpen] = useState(false);
   const [isSalonModalOpen, setIsSalonModalOpen] = useState(false);
+  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [editingTable, setEditingTable] = useState<Table | null>(null);
   const [editingSalon, setEditingSalon] = useState<Salon | null>(null);
   const [draggedTable, setDraggedTable] = useState<Table | null>(null);
@@ -36,6 +40,10 @@ const Tables: React.FC = () => {
     description: ''
   });
 
+  const [accountFormData, setAccountFormData] = useState({
+    name: ''
+  });
+
   // Queries
   const salons = useLiveQuery(() => 
     db.salons.where('isActive').equals(1).toArray()
@@ -52,7 +60,16 @@ const Tables: React.FC = () => {
     if (selectedSalon) {
       return db.salons.get(selectedSalon);
     }
-    return null;
+    return undefined;
+  }, [selectedSalon]);
+
+  const namedAccounts = useLiveQuery(() => {
+    if (selectedSalon) {
+      return db.namedAccounts.where('salonId').equals(selectedSalon).toArray().then(accounts => 
+        accounts.filter(account => account.status === 'active')
+      );
+    }
+    return [];
   }, [selectedSalon]);
 
   // Initialize with first salon
@@ -218,6 +235,61 @@ const Tables: React.FC = () => {
     });
   };
 
+  // Account handlers
+  const handleAccountSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!accountFormData.name || !selectedSalon) {
+      toast.error('Por favor ingresa un nombre para la cuenta');
+      return;
+    }
+
+    try {
+      await db.namedAccounts.add({
+        name: accountFormData.name,
+        salonId: selectedSalon,
+        status: 'active',
+        totalAmount: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        syncStatus: 'pending'
+      });
+      
+      toast.success('Cuenta creada exitosamente');
+      closeAccountModal();
+    } catch (error) {
+      console.error('Error creating account:', error);
+      toast.error('Error al crear la cuenta');
+    }
+  };
+
+  const handlePayAccount = async (account: NamedAccount) => {
+    if (window.confirm(`¿Estás seguro de que quieres cobrar la cuenta de "${account.name}"?`)) {
+      try {
+        await db.namedAccounts.update(account.id!, {
+          status: 'paid',
+          paidAt: new Date(),
+          updatedAt: new Date(),
+          syncStatus: 'pending'
+        });
+        toast.success(`Cuenta de ${account.name} cobrada exitosamente`);
+      } catch (error) {
+        console.error('Error paying account:', error);
+        toast.error('Error al cobrar la cuenta');
+      }
+    }
+  };
+
+  const openAccountModal = () => {
+    setAccountFormData({ name: '' });
+    setIsAccountModalOpen(true);
+  };
+
+  const closeAccountModal = () => {
+    setIsAccountModalOpen(false);
+    setAccountFormData({ name: '' });
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'available':
@@ -315,14 +387,26 @@ const Tables: React.FC = () => {
               <Plus className="w-5 h-5" />
               <span>Nuevo Salón</span>
             </button>
-            <button
-              onClick={openTableModal}
-              disabled={!selectedSalon}
-              className="btn btn-primary flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed px-6 py-4 min-h-[48px] text-base font-medium"
-            >
-              <Plus className="w-5 h-5" />
-              <span>Nueva Mesa</span>
-            </button>
+            {activeTab === 'tables' ? (
+              <button
+                onClick={openTableModal}
+                disabled={!selectedSalon}
+                className="btn btn-primary flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed px-6 py-4 min-h-[48px] text-base font-medium"
+              >
+                <Plus className="w-5 h-5" />
+                <span>Nueva Mesa</span>
+              </button>
+            ) : (
+              <button
+                onClick={openAccountModal}
+                disabled={!selectedSalon}
+                className="btn btn-primary flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed px-6 py-4 min-h-[48px] text-base font-medium"
+                style={{ backgroundColor: '#9333ea', borderColor: '#9333ea' }}
+              >
+                <Plus className="w-5 h-5" />
+                <span>Nueva Cuenta</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -351,6 +435,32 @@ const Tables: React.FC = () => {
             </button>
           )}
         </div>
+
+        {/* Pestañas */}
+        {selectedSalon && (
+          <div className="flex space-x-1 mt-4">
+            <button
+              onClick={() => setActiveTab('tables')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                activeTab === 'tables'
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Mesas
+            </button>
+            <button
+              onClick={() => setActiveTab('accounts')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                activeTab === 'accounts'
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Cuentas por Nombre
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Contenido */}
@@ -360,67 +470,98 @@ const Tables: React.FC = () => {
             {/* Editor visual */}
             <div className="flex-1 bg-white m-4 rounded-lg border border-gray-200 relative overflow-auto">
               <div className="absolute inset-0 p-4">
-                <div 
-                  className={`w-full h-full relative bg-gray-50 rounded border-2 border-dashed border-gray-300 ${isDragging ? 'bg-blue-50 border-blue-300' : ''}`}
-                  onDragOver={handleDragOver}
-                  onDrop={handleDrop}
-                >
-                  {tables?.map((table) => (
-                    <div
-                      key={table.id}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, table)}
-                      className={`absolute rounded-lg border-2 cursor-move transition-all duration-200 flex items-center justify-center text-xs font-medium select-none ${getStatusColor(table.status)} ${draggedTable?.id === table.id ? 'opacity-50' : ''} hover:shadow-lg hover:scale-105`}
-                      style={{
-                        left: table.x,
-                        top: table.y,
-                        width: table.width || 80,
-                        height: table.height || 80
-                      }}
-                      onDoubleClick={() => handleEditTable(table)}
-                      title={`Mesa ${table.number} - ${table.name} (${getStatusText(table.status)}) - Arrastra para mover, doble clic para editar`}
-                    >
-                      <div className="text-center pointer-events-none">
-                        <div className="font-semibold">{table.number}</div>
-                        <div className="text-xs opacity-75">{table.name}</div>
+                {activeTab === 'tables' ? (
+                  <div 
+                    className={`w-full h-full relative bg-gray-50 rounded border-2 border-dashed border-gray-300 ${isDragging ? 'bg-blue-50 border-blue-300' : ''}`}
+                    onDragOver={handleDragOver}
+                    onDrop={handleDrop}
+                  >
+                    {tables?.map((table) => (
+                      <div
+                        key={table.id}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, table)}
+                        className={`absolute rounded-lg border-2 cursor-move transition-all duration-200 flex items-center justify-center text-xs font-medium select-none ${getStatusColor(table.status)} ${draggedTable?.id === table.id ? 'opacity-50' : ''} hover:shadow-lg hover:scale-105`}
+                        style={{
+                          left: table.x,
+                          top: table.y,
+                          width: table.width || 80,
+                          height: table.height || 80
+                        }}
+                        onDoubleClick={() => handleEditTable(table)}
+                        title={`Mesa ${table.number} - ${table.name} (${getStatusText(table.status)}) - Arrastra para mover, doble clic para editar`}
+                      >
+                        <div className="text-center pointer-events-none">
+                          <div className="font-semibold">{table.number}</div>
+                          <div className="text-xs opacity-75">{table.name}</div>
+                        </div>
+                        
+                        {/* Botón de eliminar */}
+                        <div className="absolute -top-2 -right-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteTable(table);
+                            }}
+                            className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center bg-white shadow-sm border border-gray-200"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
-                      
-                      {/* Botón de eliminar */}
-                      <div className="absolute -top-2 -right-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteTable(table);
-                          }}
-                          className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center bg-white shadow-sm border border-gray-200"
+                    ))}
+                    
+                    {tables?.length === 0 && (
+                      <div className="absolute inset-0 flex items-center justify-center text-gray-500">
+                        <div className="text-center">
+                          <Square className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                          <p className="text-lg font-medium">Sin mesas en este salón</p>
+                          <p className="text-sm">Haz clic en "Nueva Mesa" para agregar una</p>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {tables && tables.length > 0 && (
+                      <div className="absolute top-2 left-2 bg-blue-100 border border-blue-300 rounded-lg p-3 text-blue-800 text-sm max-w-xs">
+                        <div className="font-medium mb-1">💡 Cómo usar el editor:</div>
+                        <ul className="text-xs space-y-1">
+                          <li>• <strong>Arrastra</strong> las mesas para moverlas</li>
+                          <li>• <strong>Doble clic</strong> para editar una mesa</li>
+                          <li>• <strong>Clic en ❌</strong> para eliminar</li>
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="w-full h-full relative bg-gray-50 rounded border-2 border-dashed border-gray-300 p-4">
+                    <div className="flex flex-wrap gap-4">
+                      {namedAccounts?.map((account) => (
+                        <div
+                          key={account.id}
+                          className="bg-purple-100 border-2 border-purple-300 rounded-lg p-4 min-w-[120px] text-center cursor-pointer hover:shadow-lg hover:scale-105 transition-all duration-200"
+                          onClick={() => handlePayAccount(account)}
+                          title={`Clic para cobrar la cuenta de ${account.name}`}
                         >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                          <User className="w-6 h-6 mx-auto mb-2 text-purple-600" />
+                          <div className="font-semibold text-purple-800 text-sm">{account.name}</div>
+                          <div className="text-xs text-purple-600 mt-1">
+                            ${account.totalAmount.toFixed(2)}
+                          </div>
+                        </div>
+                      ))}
+                      
+                      {namedAccounts?.length === 0 && (
+                        <div className="absolute inset-0 flex items-center justify-center text-gray-500">
+                          <div className="text-center">
+                            <User className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                            <p className="text-lg font-medium">Sin cuentas activas</p>
+                            <p className="text-sm">Haz clic en "Nueva Cuenta" para crear una</p>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  ))}
-                  
-                  {tables?.length === 0 && (
-                    <div className="absolute inset-0 flex items-center justify-center text-gray-500">
-                      <div className="text-center">
-                        <Square className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                        <p className="text-lg font-medium">Sin mesas en este salón</p>
-                        <p className="text-sm">Haz clic en "Nueva Mesa" para agregar una</p>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {tables && tables.length > 0 && (
-                    <div className="absolute top-2 left-2 bg-blue-100 border border-blue-300 rounded-lg p-3 text-blue-800 text-sm max-w-xs">
-                      <div className="font-medium mb-1">💡 Cómo usar el editor:</div>
-                      <ul className="text-xs space-y-1">
-                        <li>• <strong>Arrastra</strong> las mesas para moverlas</li>
-                        <li>• <strong>Doble clic</strong> para editar una mesa</li>
-                        <li>• <strong>Clic en ❌</strong> para eliminar</li>
-                      </ul>
-                    </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -435,74 +576,136 @@ const Tables: React.FC = () => {
                   <p className="text-gray-600 mb-4">{selectedSalonData.description}</p>
                 )}
 
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="font-medium text-gray-900 mb-2">Estadísticas</h4>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div className="bg-gray-50 p-2 rounded">
-                        <div className="font-medium">Total Mesas</div>
-                        <div className="text-lg font-bold text-primary-600">
-                          {tables?.length || 0}
-                        </div>
-                      </div>
-                      <div className="bg-green-50 p-2 rounded">
-                        <div className="font-medium">Disponibles</div>
-                        <div className="text-lg font-bold text-green-600">
-                          {tables?.filter(t => t.status === 'available').length || 0}
-                        </div>
-                      </div>
-                      <div className="bg-red-50 p-2 rounded">
-                        <div className="font-medium">Ocupadas</div>
-                        <div className="text-lg font-bold text-red-600">
-                          {tables?.filter(t => t.status === 'occupied').length || 0}
-                        </div>
-                      </div>
-                      <div className="bg-yellow-50 p-2 rounded">
-                        <div className="font-medium">Reservadas</div>
-                        <div className="text-lg font-bold text-yellow-600">
-                          {tables?.filter(t => t.status === 'reserved').length || 0}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4 className="font-medium text-gray-900 mb-2">Lista de Mesas</h4>
-                    <div className="space-y-2 max-h-96 overflow-auto">
-                      {tables?.map((table) => (
-                        <div
-                          key={table.id}
-                          className="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 cursor-pointer"
-                          onClick={() => handleEditTable(table)}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="font-medium">Mesa {table.number}</div>
-                              <div className="text-sm text-gray-600">{table.name}</div>
-                              <div className="text-xs text-gray-500">
-                                Capacidad: {table.capacity} personas
-                              </div>
-                            </div>
-                            <div className="flex items-center space-x-1">
-                              <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(table.status)}`}>
-                                {getStatusText(table.status)}
-                              </span>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteTable(table);
-                                }}
-                                className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
+                {activeTab === 'tables' ? (
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="font-medium text-gray-900 mb-2">Estadísticas de Mesas</h4>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="bg-gray-50 p-2 rounded">
+                          <div className="font-medium">Total Mesas</div>
+                          <div className="text-lg font-bold text-primary-600">
+                            {tables?.length || 0}
                           </div>
                         </div>
-                      ))}
+                        <div className="bg-green-50 p-2 rounded">
+                          <div className="font-medium">Disponibles</div>
+                          <div className="text-lg font-bold text-green-600">
+                            {tables?.filter(t => t.status === 'available').length || 0}
+                          </div>
+                        </div>
+                        <div className="bg-red-50 p-2 rounded">
+                          <div className="font-medium">Ocupadas</div>
+                          <div className="text-lg font-bold text-red-600">
+                            {tables?.filter(t => t.status === 'occupied').length || 0}
+                          </div>
+                        </div>
+                        <div className="bg-yellow-50 p-2 rounded">
+                          <div className="font-medium">Reservadas</div>
+                          <div className="text-lg font-bold text-yellow-600">
+                            {tables?.filter(t => t.status === 'reserved').length || 0}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="font-medium text-gray-900 mb-2">Lista de Mesas</h4>
+                      <div className="space-y-2 max-h-96 overflow-auto">
+                        {tables?.map((table) => (
+                          <div
+                            key={table.id}
+                            className="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 cursor-pointer"
+                            onClick={() => handleEditTable(table)}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <div className="font-medium">Mesa {table.number}</div>
+                                <div className="text-sm text-gray-600">{table.name}</div>
+                                <div className="text-xs text-gray-500">
+                                  Capacidad: {table.capacity} personas
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-1">
+                                <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(table.status)}`}>
+                                  {getStatusText(table.status)}
+                                </span>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteTable(table);
+                                  }}
+                                  className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="font-medium text-gray-900 mb-2">Estadísticas de Cuentas</h4>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="bg-purple-50 p-2 rounded">
+                          <div className="font-medium">Cuentas Activas</div>
+                          <div className="text-lg font-bold text-purple-600">
+                            {namedAccounts?.length || 0}
+                          </div>
+                        </div>
+                        <div className="bg-green-50 p-2 rounded">
+                          <div className="font-medium">Total a Cobrar</div>
+                          <div className="text-lg font-bold text-green-600">
+                            ${namedAccounts?.reduce((sum, account) => sum + account.totalAmount, 0).toFixed(2) || '0.00'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="font-medium text-gray-900 mb-2">Cuentas Activas</h4>
+                      <div className="space-y-2 max-h-96 overflow-auto">
+                        {namedAccounts?.map((account) => (
+                          <div
+                            key={account.id}
+                            className="border border-purple-200 rounded-lg p-3 hover:bg-purple-50 cursor-pointer"
+                            onClick={() => handlePayAccount(account)}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <div className="font-medium text-purple-800">{account.name}</div>
+                                <div className="text-sm text-purple-600">
+                                  ${account.totalAmount.toFixed(2)}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  Creada: {new Date(account.createdAt).toLocaleDateString()}
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-1">
+                                <span className="px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                                  Activa
+                                </span>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handlePayAccount(account);
+                                  }}
+                                  className="p-2 text-green-600 hover:bg-green-100 rounded-lg transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
+                                  title="Cobrar cuenta"
+                                >
+                                  <DollarSign className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -691,6 +894,59 @@ const Tables: React.FC = () => {
                 </button>
                 <button type="submit" className="flex-1 btn btn-primary px-6 py-4 min-h-[48px] text-base font-medium">
                   {editingSalon ? 'Actualizar' : 'Crear'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Cuenta por Nombre */}
+      {isAccountModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Nueva Cuenta por Nombre
+              </h2>
+              <button
+                onClick={closeAccountModal}
+                className="text-gray-400 hover:text-gray-600 p-3 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <Plus className="w-6 h-6 transform rotate-45" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAccountSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nombre del Cliente *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={accountFormData.name}
+                  onChange={(e) => setAccountFormData({ ...accountFormData, name: e.target.value })}
+                  className="input"
+                  placeholder="Juan Pérez, María García..."
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={closeAccountModal}
+                  className="flex-1 btn btn-secondary px-6 py-4 min-h-[48px] text-base font-medium"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  className="flex-1 btn btn-primary px-6 py-4 min-h-[48px] text-base font-medium"
+                  style={{ backgroundColor: '#9333ea', borderColor: '#9333ea' }}
+                >
+                  Crear Cuenta
                 </button>
               </div>
             </form>

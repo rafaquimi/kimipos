@@ -45,11 +45,17 @@ interface TableContextType {
 	// Unión de mesas
 	mergeTables: (table1Id: string, table2Id: string) => void;
 	unmergeTables: (tableId: string) => void;
+	forceUnmergeTable: (tableId: string) => void;
 	getTableMergeGroup: (tableId: string) => TableData[];
+	// Nombres temporales
+	updateTableTemporaryName: (tableId: string, temporaryName: string | null) => void;
 	// Decoración
 	addDecor: (item: DecorData) => void;
 	updateDecorPosition: (id: string, x: number, y: number) => void;
 	updateDecorRotation: (id: string, rotation: number) => void;
+	// Cuentas por nombre
+	addNamedAccount: (customerName: string) => string;
+	removeNamedAccount: (accountId: string) => void;
 }
 
 const TableContext = createContext<TableContextType | undefined>(undefined);
@@ -84,6 +90,21 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 						height: d.height,
 					}))
 				}));
+				
+				// Asegurar que el salón "Cuentas por nombre" siempre exista
+				const hasNamedAccountsSalon = restored.some(s => s.id === 'named-accounts');
+				if (!hasNamedAccountsSalon) {
+					const namedAccountsSalon: SalonData = {
+						id: 'named-accounts',
+						name: 'Cuentas por nombre',
+						width: 800,
+						height: 600,
+						tables: [],
+						decor: []
+					};
+					restored.push(namedAccountsSalon);
+				}
+				
 				setSalons(restored);
 			} else {
 				// Datos iniciales solo si no hay nada guardado
@@ -96,13 +117,23 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 						{ id: '1', number: '1', name: 'Entrada', status: 'available', x: 100, y: 100, capacity: 4 },
 						{ id: '2', number: '2', name: 'Ventana', status: 'available', x: 250, y: 120, capacity: 2 },
 						{ id: '3', number: '3', name: 'Central', status: 'available', x: 180, y: 250, capacity: 6 },
-						{ id: '4', number: '4', name: 'Terraza', status: 'reserved', x: 350, y: 200, capacity: 4 },
+						{ id: '4', number: '4', name: 'Terraza', status: 'available', x: 350, y: 200, capacity: 4 },
 						{ id: '5', number: '5', name: 'VIP', status: 'available', x: 120, y: 350, capacity: 8 },
 						{ id: '6', number: '6', status: 'available', x: 300, y: 320, capacity: 2 }
 					],
 					decor: []
 				};
-				setSalons([initialSalon]);
+				
+				const namedAccountsSalon: SalonData = {
+					id: 'named-accounts',
+					name: 'Cuentas por nombre',
+					width: 800,
+					height: 600,
+					tables: [],
+					decor: []
+				};
+				
+				setSalons([initialSalon, namedAccountsSalon]);
 			}
 			
 			if (savedActive) {
@@ -202,6 +233,12 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 			tablesToClear = mergeGroup.map(t => t.id);
 		}
 
+		// Si es una cuenta por nombre, eliminarla completamente del salón
+		if (tableId.startsWith('account-')) {
+			removeNamedAccount(tableId);
+			return;
+		}
+
 		// Limpiar todas las mesas del grupo (o solo la mesa individual)
 		setSalons(prev => prev.map(s => s.id !== activeSalonId ? s : ({
 			...s,
@@ -210,7 +247,8 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 				status: 'available',
 				occupiedSince: undefined,
 				currentOrder: undefined,
-				// Limpiar también las propiedades de unión
+				temporaryName: undefined, // Limpiar nombre temporal al cobrar
+				// Al cobrar, automáticamente desunir las mesas
 				mergedWith: undefined,
 				isMaster: undefined,
 				mergeGroup: undefined
@@ -407,11 +445,102 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		}
 	};
 
+	// Función para limpiar completamente el estado de unión de una mesa
+	const forceUnmergeTable = (tableId: string) => {
+		setSalons(prev => prev.map(s => s.id !== activeSalonId ? s : ({
+			...s,
+			tables: s.tables.map(t => {
+				if (t.id === tableId) {
+					return {
+						...t,
+						mergedWith: undefined,
+						isMaster: undefined,
+						mergeGroup: undefined
+					};
+				}
+				return t;
+			})
+		})));
+	};
+
+	// Función para actualizar el nombre temporal de una mesa
+	const updateTableTemporaryName = (tableId: string, temporaryName: string | null) => {
+		setSalons(prev => prev.map(s => s.id !== activeSalonId ? s : ({
+			...s,
+			tables: s.tables.map(t => t.id === tableId ? {
+				...t,
+				temporaryName: temporaryName
+			} : t)
+		})));
+	};
+
 	const getTableMergeGroup = (tableId: string): TableData[] => {
 		const table = getTableById(tableId);
 		if (!table || !table.mergeGroup) return [table];
 
 		return activeSalon?.tables.filter(t => t.mergeGroup === table.mergeGroup) || [];
+	};
+
+	// Funciones para cuentas por nombre
+	const addNamedAccount = (customerName: string): string => {
+		// Verificar si ya existe una cuenta con ese nombre
+		const existingAccount = salons
+			.find(s => s.id === 'named-accounts')
+			?.tables.find(t => t.name === customerName);
+		
+		if (existingAccount) {
+			throw new Error(`Ya existe una cuenta para ${customerName}`);
+		}
+
+		// Obtener las cuentas existentes para calcular la posición
+		const existingAccounts = salons
+			.find(s => s.id === 'named-accounts')
+			?.tables || [];
+		
+		// Calcular posición en fila (4 cuentas por fila)
+		const accountsPerRow = 4;
+		const row = Math.floor(existingAccounts.length / accountsPerRow);
+		const col = existingAccounts.length % accountsPerRow;
+		
+		// Posiciones base para las cuentas (ajustar según el tamaño del salón)
+		const baseX = 120;
+		const baseY = 120;
+		const spacingX = 120; // Espacio horizontal entre cuentas
+		const spacingY = 120; // Espacio vertical entre filas
+
+		const accountId = `account-${Date.now()}`;
+		const newAccount: TableData = {
+			id: accountId,
+			number: customerName,
+			name: customerName,
+			status: 'occupied',
+			x: baseX + (col * spacingX),
+			y: baseY + (row * spacingY),
+			capacity: 1,
+			occupiedSince: new Date(),
+			temporaryName: customerName
+		};
+
+		setSalons(prev => prev.map(s => s.id !== 'named-accounts' ? s : ({
+			...s,
+			tables: [...s.tables, newAccount]
+		})));
+
+		return accountId;
+	};
+
+	const removeNamedAccount = (accountId: string) => {
+		setSalons(prev => prev.map(s => s.id !== 'named-accounts' ? s : ({
+			...s,
+			tables: s.tables.filter(t => t.id !== accountId)
+		})));
+
+		// Limpiar pedidos asociados
+		setTableOrderItems(prev => {
+			const newItems = { ...prev };
+			delete newItems[accountId];
+			return newItems;
+		});
 	};
 
 	const value: TableContextType = {
@@ -434,10 +563,14 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		updateTableRotation,
 		mergeTables,
 		unmergeTables,
+		forceUnmergeTable,
 		getTableMergeGroup,
+		updateTableTemporaryName,
 		addDecor,
 		updateDecorPosition,
-		updateDecorRotation
+		updateDecorRotation,
+		addNamedAccount,
+		removeNamedAccount
 	};
 
 	return (

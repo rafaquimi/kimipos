@@ -123,6 +123,18 @@ export interface SyncLog {
   lastAttempt?: Date;
 }
 
+export interface NamedAccount {
+  id?: number;
+  name: string;
+  salonId: number;
+  status: 'active' | 'paid' | 'cancelled';
+  totalAmount: number;
+  createdAt: Date;
+  updatedAt: Date;
+  paidAt?: Date;
+  syncStatus?: 'pending' | 'synced' | 'conflict';
+}
+
 // Base de datos
 export class KimiPOSDatabase extends Dexie {
   categories!: Table<Category>;
@@ -134,6 +146,7 @@ export class KimiPOSDatabase extends Dexie {
   customers!: Table<Customer>;
   configuration!: Table<Configuration>;
   syncLogs!: Table<SyncLog>;
+  namedAccounts!: Table<NamedAccount>;
 
   constructor() {
     super('KimiPOSDatabase');
@@ -148,6 +161,10 @@ export class KimiPOSDatabase extends Dexie {
       customers: '++id, name, email, phone, syncStatus',
       configuration: '++id, key, category, syncStatus',
       syncLogs: '++id, table, recordId, status, createdAt'
+    });
+
+    this.version(2).stores({
+      namedAccounts: '++id, name, salonId, status, syncStatus'
     });
 
     // Hooks para auto-timestamps y sync tracking
@@ -229,6 +246,17 @@ export class KimiPOSDatabase extends Dexie {
 
     this.syncLogs.hook('creating', function (primKey, obj, trans) {
       obj.createdAt = new Date();
+    });
+
+    this.namedAccounts.hook('creating', function (primKey, obj, trans) {
+      obj.createdAt = new Date();
+      obj.updatedAt = new Date();
+      obj.syncStatus = 'pending';
+    });
+
+    this.namedAccounts.hook('updating', function (modifications, primKey, obj, trans) {
+      modifications.updatedAt = new Date();
+      modifications.syncStatus = 'pending';
     });
   }
 

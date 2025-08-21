@@ -6,6 +6,7 @@ export interface TableData {
   id: string;
   number: string;
   name?: string;
+  temporaryName?: string; // Nombre temporal asignado por el usuario
   status: 'available' | 'occupied' | 'reserved';
   x: number;
   y: number;
@@ -27,6 +28,7 @@ interface TableComponentProps {
   table: TableData;
   isSelected?: boolean;
   onClick?: (table: TableData) => void;
+  onLongPress?: (table: TableData) => void; // Nueva prop para pulsación sostenida
   onDragStart?: (table: TableData) => void;
   onDragEnd?: (table: TableData, x: number, y: number) => void;
   onRotationChange?: (table: TableData, rotation: number) => void;
@@ -40,6 +42,7 @@ const TableComponent: React.FC<TableComponentProps> = ({
   table,
   isSelected = false,
   onClick,
+  onLongPress,
   onDragStart,
   onDragEnd,
   onRotationChange,
@@ -57,6 +60,10 @@ const TableComponent: React.FC<TableComponentProps> = ({
   });
   const [currentRotation, setCurrentRotation] = useState(table.rotation || 0);
   const tableRef = useRef<HTMLDivElement>(null);
+  
+  // Estados para pulsación sostenida
+  const [longPressTimer, setLongPressTimer] = useState<NodeJS.Timeout | null>(null);
+  const [isLongPressing, setIsLongPressing] = useState(false);
 
   // Actualizar posición y rotación cuando cambia la prop table
   useEffect(() => {
@@ -88,6 +95,11 @@ const TableComponent: React.FC<TableComponentProps> = ({
   };
 
   const getStatusColor = () => {
+    // Si es una cuenta por nombre, usar tema amarillo
+    if (table.id.startsWith('account-')) {
+      return 'bg-yellow-100 border-yellow-400 text-yellow-800';
+    }
+    
     // Si la mesa está unida, usar color del grupo
     if (table.mergeGroup) {
       return getMergeGroupColor(table.mergeGroup);
@@ -119,8 +131,35 @@ const TableComponent: React.FC<TableComponentProps> = ({
     return `${minutes}m`;
   };
 
+  // Función para iniciar temporizador de pulsación sostenida
+  const startLongPressTimer = (e: React.MouseEvent | React.TouchEvent) => {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+    }
+    
+    const timer = setTimeout(() => {
+      setIsLongPressing(true);
+      onLongPress?.(table);
+    }, 1000); // 1 segundo
+    
+    setLongPressTimer(timer);
+  };
+
+  // Función para cancelar temporizador de pulsación sostenida
+  const cancelLongPressTimer = () => {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      setLongPressTimer(null);
+    }
+    setIsLongPressing(false);
+  };
+
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (!isDraggable) return;
+    if (!isDraggable) {
+      // Si no es arrastrable, iniciar temporizador de pulsación sostenida
+      startLongPressTimer(e);
+      return;
+    }
     
     // No activar arrastre si se hizo clic en el manejador de rotación
     const target = e.target as HTMLElement;
@@ -172,6 +211,22 @@ const TableComponent: React.FC<TableComponentProps> = ({
       const finalX = isNaN(currentPosition.x) ? 100 : currentPosition.x;
       const finalY = isNaN(currentPosition.y) ? 100 : currentPosition.y;
       onDragEnd?.(table, finalX, finalY);
+    } else {
+      // Cancelar pulsación sostenida si no se estaba arrastrando
+      cancelLongPressTimer();
+    }
+  };
+
+  // Manejadores para touch events (móvil)
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!isDraggable) {
+      startLongPressTimer(e);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (!isDragging) {
+      cancelLongPressTimer();
     }
   };
 
@@ -194,6 +249,15 @@ const TableComponent: React.FC<TableComponentProps> = ({
     }
   }, [isDragging, dragStart, scale, size, currentPosition]);
 
+  // Limpiar temporizador cuando el componente se desmonte
+  useEffect(() => {
+    return () => {
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+      }
+    };
+  }, [longPressTimer]);
+
   return (
     <div
       ref={tableRef}
@@ -212,15 +276,26 @@ const TableComponent: React.FC<TableComponentProps> = ({
       }}
       onClick={(e) => {
         e.stopPropagation();
-        onClick?.(table);
+        if (!isLongPressing) {
+          onClick?.(table);
+        }
       }}
       onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onLongPress?.(table);
+      }}
     >
-      {/* Mesa circular */}
+      {/* Mesa circular o cuadrada (cuadrada para cuentas por nombre) */}
       <div
-        className={`w-full h-full rounded-full border-2 shadow-lg flex flex-col items-center justify-center relative ${getStatusColor()} hover:shadow-xl transition-shadow`}
+        className={`w-full h-full border-2 shadow-lg flex flex-col items-center justify-center relative ${getStatusColor()} hover:shadow-xl transition-shadow ${
+          table.id.startsWith('account-') ? 'rounded-lg' : 'rounded-full'
+        }`}
         style={{ pointerEvents: 'none' }}
       >
         {/* Número de mesa */}
@@ -228,12 +303,16 @@ const TableComponent: React.FC<TableComponentProps> = ({
           {table.number}
         </div>
         
-        {/* Nombre de mesa (si existe) */}
-        {table.name && (
-          <div className="text-xs opacity-75 text-center">
+        {/* Nombre temporal (prioridad sobre el nombre permanente) */}
+        {table.temporaryName ? (
+          <div className="text-sm font-bold text-center bg-blue-100 text-blue-800 px-2 py-1 rounded">
+            {table.temporaryName}
+          </div>
+        ) : table.name ? (
+          <div className="text-sm font-bold opacity-75 text-center">
             {table.name}
           </div>
-        )}
+        ) : null}
 
         {/* Etiqueta de unión de mesas */}
         {table.mergedWith && (
@@ -254,16 +333,16 @@ const TableComponent: React.FC<TableComponentProps> = ({
           <>
             {/* Tiempo transcurrido - solo en mesa principal o mesas no unidas */}
             {table.occupiedSince && (!table.mergeGroup || table.isMaster) && (
-              <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 bg-red-600 text-white text-xs px-2 py-1 rounded-full flex items-center space-x-1">
-                <Clock className="w-3 h-3" />
+              <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-red-600 to-rose-600 text-white text-sm font-bold px-3 py-2 rounded-lg shadow-lg border-2 border-white flex items-center space-x-1">
+                <Clock className="w-4 h-4" />
                 <span>{getTimeElapsed()}</span>
               </div>
             )}
             
             {/* Total del pedido - solo en mesa principal o mesas no unidas */}
             {table.currentOrder && (!table.mergeGroup || table.isMaster) && (
-              <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded-full">
-                ${table.currentOrder.total.toFixed(2)}
+              <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-sm font-bold px-3 py-2 rounded-lg shadow-lg border-2 border-white">
+                €{table.currentOrder.total.toFixed(2)}
               </div>
             )}
 

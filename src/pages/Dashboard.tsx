@@ -22,6 +22,7 @@ import NumericKeypad from '../components/NumericKeypad';
 import TariffSelectorModal from '../components/TariffSelectorModal';
 import CombinationSelectorModal from '../components/CombinationSelectorModal';
 import ModifiersModal from '../components/ModifiersModal';
+import ConfirmationModal from '../components/ConfirmationModal';
 import { TableData } from '../components/Table/TableComponent';
 import { useTables } from '../contexts/TableContext';
 import { useConfig } from '../contexts/ConfigContext';
@@ -46,7 +47,8 @@ const Dashboard: React.FC = () => {
   const [currentOrder, setCurrentOrder] = useState<OrderItem[]>([]);
   const [customerName, setCustomerName] = useState('');
   const [selectedTable, setSelectedTable] = useState<TableData | null>(null);
-  const [isTableModalOpen, setIsTableModalOpen] = useState(false);
+  const [isTableModalOpen, setIsTableModalOpen] = useState(false); // No abrir automáticamente al inicio
+  const [isTicketWithoutTable, setIsTicketWithoutTable] = useState(false); // Para tickets sin mesa
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
   const [showNumericKeypad, setShowNumericKeypad] = useState(false);
@@ -65,6 +67,14 @@ const Dashboard: React.FC = () => {
   // Modificadores
   const [modifiersFor, setModifiersFor] = useState<string | null>(null);
   const [showModifiersModal, setShowModifiersModal] = useState(false);
+  // Modal de confirmación
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+  const [confirmationData, setConfirmationData] = useState<{
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    type: 'danger' | 'warning' | 'info';
+  } | null>(null);
   // Edición de tickets (desde Pedidos)
   const [editOrderId, setEditOrderId] = useState<number | null>(null);
   const [originalTotalForEdit, setOriginalTotalForEdit] = useState<number | null>(null);
@@ -76,7 +86,7 @@ const Dashboard: React.FC = () => {
     newTax?: number; 
   } | null>(null);
   
-  const { addOrderToTable, getTableOrderItems, clearTableOrder, unmergeTables } = useTables();
+  const { addOrderToTable, getTableOrderItems, clearTableOrder, tables, removeNamedAccount } = useTables();
   const { getCurrencySymbol, getTaxRate, getModifiersForCategory } = useConfig();
   const { products, categories } = useProducts();
 
@@ -120,7 +130,11 @@ const Dashboard: React.FC = () => {
   React.useEffect(() => {
     const loadForEdit = async () => {
       const editOrderId = localStorage.getItem('orderToEdit');
-      if (!editOrderId) return;
+      if (!editOrderId) {
+        // Si no hay ticket para editar, abrir modal de mesas
+        setIsTableModalOpen(true);
+        return;
+      }
       try {
         const order = await db.orders.get(Number(editOrderId));
         if (order) {
@@ -137,9 +151,13 @@ const Dashboard: React.FC = () => {
           setEditOrderId(order.id || null);
           setOriginalTotalForEdit(order.total || 0);
           toast.success(`Editando ticket #${order.id}`);
+          // No abrir modal de mesas cuando se está editando
+          setIsTableModalOpen(false);
         }
       } catch (e) {
         console.error('Error cargando ticket para edición:', e);
+        // Si hay error, abrir modal de mesas
+        setIsTableModalOpen(true);
       }
     };
     loadForEdit();
@@ -154,13 +172,17 @@ const Dashboard: React.FC = () => {
     // Limpiar pedido actual
     setCurrentOrder([]);
     
-    // Limpiar mesa seleccionada
+    // Limpiar mesa seleccionada y ticket sin mesa
     setSelectedTable(null);
+    setIsTicketWithoutTable(false);
     
     // Limpiar localStorage
     localStorage.removeItem('orderToEdit');
     
-    toast.success('Dashboard limpiado, listo para nuevos pedidos');
+    // Abrir modal de mesas para seleccionar nueva mesa
+    setIsTableModalOpen(true);
+    
+    toast.success('Dashboard limpiado, selecciona una nueva mesa');
   };
 
   const saveEditedOrder = async () => {
@@ -211,6 +233,13 @@ const Dashboard: React.FC = () => {
   };
 
   const handleProductClick = (product: any) => {
+    // Verificar que haya una mesa seleccionada o esté en modo ticket sin mesa
+    if (!selectedTable && !isTicketWithoutTable) {
+      toast.error('Debes seleccionar una mesa antes de agregar productos');
+      setIsTableModalOpen(true);
+      return;
+    }
+    
     // Si el producto tiene combinaciones activas, mostrar selector de combinaciones
     if (product.combinations && product.combinations.some((c: any) => c.isActive)) {
       setSelectedProductForCombination(product);
@@ -227,6 +256,13 @@ const Dashboard: React.FC = () => {
   };
 
   const handleTariffSelect = (tariff: ProductTariff) => {
+    // Verificar que haya una mesa seleccionada o esté en modo ticket sin mesa
+    if (!selectedTable && !isTicketWithoutTable) {
+      toast.error('Debes seleccionar una mesa antes de agregar productos');
+      setIsTableModalOpen(true);
+      return;
+    }
+    
     // Si hay una combinación pendiente para este producto, combinar ambas selecciones
     if (pendingCombination && selectedProductForTariff && pendingCombination.baseProduct.id === selectedProductForTariff.id) {
       const { baseProduct, combinationNames, additionalPrice } = pendingCombination;
@@ -276,6 +312,13 @@ const Dashboard: React.FC = () => {
   };
 
   const handleCombinationConfirm = (baseProduct: any, selectedProducts: Array<{product: any, quantity: number}>) => {
+    // Verificar que haya una mesa seleccionada o esté en modo ticket sin mesa
+    if (!selectedTable && !isTicketWithoutTable) {
+      toast.error('Debes seleccionar una mesa antes de agregar productos');
+      setIsTableModalOpen(true);
+      return;
+    }
+    
     // Crear un nombre descriptivo para la combinación
     const combinationNames = selectedProducts.map(sp => 
       `${sp.product.name}${sp.quantity > 1 ? ` (x${sp.quantity})` : ''}`
@@ -394,6 +437,7 @@ const Dashboard: React.FC = () => {
 
   const handleTableSelect = (table: TableData) => {
     setSelectedTable(table);
+    setIsTicketWithoutTable(false); // Salir del modo ticket sin mesa
     
     // Si la mesa está ocupada, cargar los pedidos existentes
     if (table.status === 'occupied') {
@@ -406,6 +450,18 @@ const Dashboard: React.FC = () => {
       // Si la mesa está disponible, limpiar el pedido actual
       setCurrentOrder([]);
     }
+    
+    // Cerrar el modal después de seleccionar una mesa
+    setIsTableModalOpen(false);
+  };
+
+  const handleTicketWithoutTable = () => {
+    setSelectedTable(null);
+    setIsTicketWithoutTable(true);
+    setCurrentOrder([]);
+    setCustomerName('');
+    setIsTableModalOpen(false);
+    toast.success('Modo ticket sin mesa activado. Puedes agregar productos y cobrarlos directamente.');
   };
 
   const calculateTotal = () => {
@@ -458,11 +514,23 @@ const Dashboard: React.FC = () => {
     // Actualizar la mesa con el pedido
     addOrderToTable(selectedTable.id, total, currentOrder);
     
-    toast.success(`Pedido procesado exitosamente para Mesa ${selectedTable.number}`);
+    // Mostrar mensaje de éxito
+    if (selectedTable.id.startsWith('account-')) {
+      toast.success(`Pedido procesado exitosamente para ${selectedTable.name}`);
+    } else {
+      toast.success(`Pedido procesado exitosamente para Mesa ${selectedTable.number}`);
+    }
     
-    // Limpiar solo el carrito local, mantener la mesa seleccionada
+    // Limpiar todo y volver a la pantalla de mesas
     setCurrentOrder([]);
     setCustomerName('');
+    setSelectedTable(null);
+    setIsTableModalOpen(true);
+  };
+
+  const showConfirmation = (title: string, message: string, onConfirm: () => void, type: 'danger' | 'warning' | 'info' = 'danger') => {
+    setConfirmationData({ title, message, onConfirm, type });
+    setShowConfirmationModal(true);
   };
 
   const clearTableCompleteOrder = () => {
@@ -476,47 +544,57 @@ const Dashboard: React.FC = () => {
       return;
     }
 
-    // Mostrar confirmación
-    if (window.confirm(`¿Estás seguro de que quieres vaciar completamente el ticket de la Mesa ${selectedTable.number}? Esta acción no se puede deshacer.`)) {
-      // Limpiar el pedido de la mesa (esto libera la mesa automáticamente)
-      clearTableOrder(selectedTable.id);
-      
-      // Limpiar también el carrito local si es de esta mesa
-      setCurrentOrder([]);
-      setCustomerName('');
-      
-      // Actualizar la mesa seleccionada para reflejar el nuevo estado
-      setSelectedTable({
-        ...selectedTable,
-        status: 'available',
-        occupiedSince: undefined,
-        currentOrder: undefined
-      });
-      
-      toast.success(`Mesa ${selectedTable.number} vaciada y liberada exitosamente`);
-    }
+    // Mostrar confirmación con modal personalizado
+    const isNamedAccount = selectedTable.id.startsWith('account-');
+    const title = isNamedAccount ? 'Eliminar Cuenta' : 'Vaciar Ticket Mesa';
+    const message = isNamedAccount 
+      ? `¿Estás seguro de que quieres eliminar la cuenta de "${selectedTable.name}"?`
+      : `¿Estás seguro de que quieres vaciar completamente el ticket de la Mesa ${selectedTable.number}?`;
+
+    const handleConfirm = () => {
+      if (isNamedAccount) {
+        // Para cuentas por nombre, eliminarlas completamente del salón
+        removeNamedAccount(selectedTable.id);
+        toast.success(`Cuenta de ${selectedTable.name} eliminada exitosamente`);
+        
+        // Limpiar el carrito local
+        setCurrentOrder([]);
+        setCustomerName('');
+        
+        // Deseleccionar la mesa y abrir modal de selección
+        setSelectedTable(null);
+        // Pequeño retraso para asegurar que el estado se actualice
+        setTimeout(() => {
+          setIsTableModalOpen(true);
+        }, 100);
+      } else {
+        // Para mesas normales, limpiar el pedido
+        clearTableOrder(selectedTable.id);
+        
+        // Actualizar la mesa seleccionada para reflejar el nuevo estado
+        setSelectedTable({
+          ...selectedTable,
+          status: 'available',
+          occupiedSince: undefined,
+          currentOrder: undefined
+        });
+        
+        toast.success(`Mesa ${selectedTable.number} vaciada y liberada exitosamente`);
+        
+        // Limpiar también el carrito local
+        setCurrentOrder([]);
+        setCustomerName('');
+      }
+    };
+
+    showConfirmation(title, message, handleConfirm, 'danger');
   };
 
-  const handleUnmergeTables = () => {
-    if (!selectedTable || !selectedTable.mergedWith) {
-      toast.error('La mesa seleccionada no está unida a otra mesa');
-      return;
-    }
-    
-    if (window.confirm(`¿Estás seguro de que quieres desunir la Mesa ${selectedTable.number}?`)) {
-      unmergeTables(selectedTable.id);
-      
-      // Actualizar la mesa seleccionada para reflejar el nuevo estado
-      setSelectedTable({
-        ...selectedTable,
-        mergedWith: undefined,
-        isMaster: undefined,
-        mergeGroup: undefined
-      });
-      
-      toast.success(`Mesa ${selectedTable.number} desunida exitosamente`);
-    }
-  };
+
+
+
+
+
 
   const { subtotal, tax, total } = calculateTotal();
 
@@ -580,10 +658,26 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Productos */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
-            {filteredProducts.map((product) => (
+                 {/* Productos */}
+         <div className="flex-1 overflow-y-auto p-6">
+           {!selectedTable && !isTicketWithoutTable && (
+             <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl text-center">
+               <div className="flex items-center justify-center space-x-2 text-yellow-700">
+                 <MapPin className="w-5 h-5" />
+                 <span className="font-medium">Selecciona una mesa para comenzar a agregar productos</span>
+               </div>
+             </div>
+           )}
+           {isTicketWithoutTable && (
+             <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl text-center">
+               <div className="flex items-center justify-center space-x-2 text-blue-700">
+                 <Receipt className="w-5 h-5" />
+                 <span className="font-medium">Modo ticket sin mesa - Agrega productos para cobrar directamente</span>
+               </div>
+             </div>
+           )}
+           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+             {filteredProducts.map((product) => (
               <div
                 key={product.id}
                 onClick={() => handleProductClick(product)}
@@ -680,19 +774,20 @@ const Dashboard: React.FC = () => {
                   }`} />
                 )}
               </button>
-              {selectedTable && (
-                <button
-                  onClick={() => {
-                    setSelectedTable(null);
-                    setCurrentOrder([]);
-                    setCustomerName('');
-                  }}
-                  className="px-4 py-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 text-gray-500 hover:text-red-500 hover:border-red-300 shadow-sm hover:shadow-md min-w-[48px] min-h-[48px] flex items-center justify-center text-lg font-bold"
-                  title="Limpiar selección de mesa"
-                >
-                  ✕
-                </button>
-              )}
+                             {selectedTable && (
+                 <button
+                   onClick={() => {
+                     setSelectedTable(null);
+                     setCurrentOrder([]);
+                     setCustomerName('');
+                     setIsTableModalOpen(true);
+                   }}
+                   className="px-4 py-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 text-gray-500 hover:text-red-500 hover:border-red-300 shadow-sm hover:shadow-md min-w-[48px] min-h-[48px] flex items-center justify-center text-lg font-bold"
+                   title="Cambiar mesa"
+                 >
+                   ✕
+                 </button>
+               )}
             </div>
           </div>
         </div>
@@ -787,22 +882,29 @@ const Dashboard: React.FC = () => {
         </div>
 
         {/* Totales y acciones */}
-        {currentOrder.length > 0 && (
+        {(currentOrder.length > 0 || editOrderId) && (
           <div className="border-t border-gray-200/50 p-6 space-y-4 bg-gradient-to-r from-blue-50/50 to-indigo-50/50">
-            <div className="space-y-2">
-                             <div className="flex justify-between text-sm">
-                 <span>Subtotal (sin IVA):</span>
-                 <span>{getCurrencySymbol()}{formatPrice(subtotal)}</span>
-               </div>
-               <div className="flex justify-between text-sm">
-                 <span>IVA (21%):</span>
-                 <span>{getCurrencySymbol()}{formatPrice(tax)}</span>
-               </div>
-               <div className="flex justify-between text-xl font-bold border-t pt-3 border-gray-300">
-                 <span className="text-gray-800">Total (IVA incl.):</span>
-                 <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">{getCurrencySymbol()}{formatPrice(total)}</span>
-               </div>
-            </div>
+            {currentOrder.length > 0 ? (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span>Subtotal (sin IVA):</span>
+                  <span>{getCurrencySymbol()}{formatPrice(subtotal)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>IVA (21%):</span>
+                  <span>{getCurrencySymbol()}{formatPrice(tax)}</span>
+                </div>
+                <div className="flex justify-between text-xl font-bold border-t pt-3 border-gray-300">
+                  <span className="text-gray-800">Total (IVA incl.):</span>
+                  <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">{getCurrencySymbol()}{formatPrice(total)}</span>
+                </div>
+              </div>
+            ) : editOrderId && (
+              <div className="text-center text-gray-600 py-4">
+                <p className="text-sm font-medium">Ticket vacío</p>
+                <p className="text-xs text-gray-500 mt-1">Puedes guardar el ticket sin productos o cancelar la edición</p>
+              </div>
+            )}
 
             <div className="space-y-2">
               {editOrderId ? (
@@ -832,68 +934,67 @@ const Dashboard: React.FC = () => {
                 </button>
               )}
               
-              <div className="grid grid-cols-3 gap-2">
-                <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-2 rounded-xl font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-md text-sm">
-                  <Calculator className="w-4 h-4" />
-                  <span>Dividir</span>
-                </button>
-                <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-2 rounded-xl font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-md text-sm">
-                  <CreditCard className="w-4 h-4" />
-                  <span>Tarjeta</span>
-                </button>
-                <button 
-                  onClick={() => setIsMergeModalOpen(true)}
-                  className="bg-blue-100 hover:bg-blue-200 text-blue-700 py-3 px-2 rounded-xl font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-md text-sm"
-                >
-                  <Link2 className="w-4 h-4" />
-                  <span>Unir</span>
-                </button>
-              </div>
+                                             <div className="grid grid-cols-3 gap-2">
+                  <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-2 rounded-xl font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-md text-sm">
+                    <Calculator className="w-4 h-4" />
+                    <span>Dividir</span>
+                  </button>
+                  <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-2 rounded-xl font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-md text-sm">
+                    <CreditCard className="w-4 h-4" />
+                    <span>Tarjeta</span>
+                  </button>
+                  <button 
+                    onClick={() => setIsMergeModalOpen(true)}
+                    className="bg-blue-100 hover:bg-blue-200 text-blue-700 py-3 px-2 rounded-xl font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-md text-sm"
+                  >
+                    <Link2 className="w-4 h-4" />
+                    <span>Unir</span>
+                  </button>
+                </div>
+                
+                
                
-              {/* Botón para cobrar mesa si está ocupada */}
-              {selectedTable && selectedTable.status === 'occupied' && (
-                <>
-                  <button
-                    onClick={() => setIsPaymentModalOpen(true)}
-                    className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white py-4 px-6 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
-                  >
-                    <DollarSign className="w-5 h-5" />
-                    <span>Cobrar Mesa</span>
-                  </button>
-                  
-                  {/* Botón para vaciar completamente el ticket de la mesa */}
-                  <button
-                    onClick={clearTableCompleteOrder}
-                    className="w-full bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white py-4 px-6 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                    <span>Vaciar Ticket Mesa</span>
-                  </button>
+               
+               
+                                            {/* Botón para cobrar mesa si está ocupada o ticket sin mesa */}
+               {(selectedTable && selectedTable.status === 'occupied') || isTicketWithoutTable ? (
+                 <>
+                   <button
+                     onClick={() => setIsPaymentModalOpen(true)}
+                     className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white py-4 px-6 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
+                   >
+                     <DollarSign className="w-5 h-5" />
+                     <span>{isTicketWithoutTable ? 'Cobrar Ticket' : (selectedTable?.id.startsWith('account-') ? 'Cobrar Cuenta' : 'Cobrar Mesa')}</span>
+                   </button>
+                   
+                                       {/* Botón para vaciar completamente el ticket de la mesa */}
+                    {selectedTable && (
+                      <button
+                        onClick={clearTableCompleteOrder}
+                        className="w-full bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white py-4 px-6 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                        <span>{selectedTable.id.startsWith('account-') ? 'Eliminar Cuenta' : 'Vaciar Ticket Mesa'}</span>
+                      </button>
+                    )}
 
-                  {/* Botón para desunir mesas si está unida */}
-                  {selectedTable.mergedWith && (
-                    <button
-                      onClick={handleUnmergeTables}
-                      className="w-full bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-700 hover:to-violet-700 text-white py-4 px-6 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
-                    >
-                      <Link2 className="w-5 h-5 transform rotate-45" />
-                      <span>Desunir de Mesa {selectedTable.mergedWith}</span>
-                    </button>
-                  )}
-                </>
-              )}
+                   
+                 </>
+               ) : null}
             </div>
           </div>
         )}
       </div>
 
-             {/* Modal de selección de mesas */}
-       <TableSelectorModal
-         isOpen={isTableModalOpen}
-         onClose={() => setIsTableModalOpen(false)}
-         onSelectTable={handleTableSelect}
-         selectedTableId={selectedTable?.id}
-       />
+                              {/* Modal de selección de mesas */}
+         <TableSelectorModal
+           isOpen={isTableModalOpen}
+           onClose={() => setIsTableModalOpen(false)}
+           onSelectTable={handleTableSelect}
+           selectedTableId={selectedTable?.id}
+           forceOpen={!selectedTable && !isTicketWithoutTable && !editOrderId} // No forzar si se está editando
+           onTicketWithoutTable={handleTicketWithoutTable}
+         />
 
        {/* Modal de cobro */}
        <PaymentModal
@@ -928,7 +1029,42 @@ const Dashboard: React.FC = () => {
                console.error('Error guardando ticket tras cobro:', e);
                toast.error('Error al guardar el ticket actualizado');
              }
-           }
+                                               } else {
+               // Cobro normal de mesa o ticket sin mesa - limpiar el dashboard
+               if (selectedTable) {
+                 // Limpiar el pedido de la mesa
+                 clearTableOrder(selectedTable.id);
+                 
+                 // Limpiar el carrito local
+                 setCurrentOrder([]);
+                 setCustomerName('');
+                 
+                 // Deseleccionar completamente la mesa
+                 setSelectedTable(null);
+                 
+                 // Abrir modal de mesas para seleccionar nueva mesa
+                 setIsTableModalOpen(true);
+                 
+                                   // Verificar si la mesa estaba unida para mostrar un mensaje más específico
+                  if (selectedTable.mergedWith) {
+                    toast.success(`Cuenta de mesas unidas cobrada exitosamente. Las mesas han sido liberadas y desunidas. Selecciona una nueva mesa.`);
+                  } else if (selectedTable.id.startsWith('account-')) {
+                    toast.success(`Cuenta de ${selectedTable.name} cobrada y cerrada exitosamente. Selecciona una nueva mesa.`);
+                  } else {
+                    toast.success(`Mesa ${selectedTable.number} cobrada y liberada exitosamente. Selecciona una nueva mesa.`);
+                  }
+               } else if (isTicketWithoutTable) {
+                 // Cobro de ticket sin mesa
+                 setCurrentOrder([]);
+                 setCustomerName('');
+                 setIsTicketWithoutTable(false);
+                 
+                 // Abrir modal de mesas para seleccionar nueva mesa
+                 setIsTableModalOpen(true);
+                 
+                 toast.success('Ticket sin mesa cobrado exitosamente. Selecciona una nueva mesa.');
+               }
+             }
            
            setIsPaymentModalOpen(false);
            setTempDiffForPayment(null);
@@ -1003,19 +1139,33 @@ const Dashboard: React.FC = () => {
             currencySymbol={getCurrencySymbol()}
           />
         )}
-        {/* Modal de modificadores */}
-        {showModifiersModal && modifiersFor && (
-          <ModifiersModal
-            isOpen={showModifiersModal}
-            onClose={() => { setShowModifiersModal(false); setModifiersFor(null); }}
-            title="Seleccionar modificadores"
-            options={getDefaultModifiersForProduct(modifiersFor)}
-            selected={currentOrder.find(i => i.productId === modifiersFor)?.modifiers || []}
-            onSave={(selected) => saveModifiersForItem(modifiersFor, selected)}
-          />
-        )}
-     </div>
-   );
- };
+                 {/* Modal de modificadores */}
+         {showModifiersModal && modifiersFor && (
+           <ModifiersModal
+             isOpen={showModifiersModal}
+             onClose={() => { setShowModifiersModal(false); setModifiersFor(null); }}
+             title="Seleccionar modificadores"
+             options={getDefaultModifiersForProduct(modifiersFor)}
+             selected={currentOrder.find(i => i.productId === modifiersFor)?.modifiers || []}
+             onSave={(selected) => saveModifiersForItem(modifiersFor, selected)}
+           />
+         )}
+
+         {/* Modal de confirmación */}
+         {showConfirmationModal && confirmationData && (
+           <ConfirmationModal
+             isOpen={showConfirmationModal}
+             onClose={() => setShowConfirmationModal(false)}
+             onConfirm={confirmationData.onConfirm}
+             title={confirmationData.title}
+             message={confirmationData.message}
+             confirmText="Confirmar"
+             cancelText="Cancelar"
+             type={confirmationData.type}
+           />
+         )}
+      </div>
+    );
+  };
 
 export default Dashboard;
