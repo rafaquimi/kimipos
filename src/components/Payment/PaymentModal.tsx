@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Receipt, CreditCard, DollarSign, Printer, Download } from 'lucide-react';
 import { useConfig } from '../../contexts/ConfigContext';
+import { calculateBasePrice, calculateVATAmount, formatPrice } from '../../utils/taxUtils';
 
 interface OrderItem {
   productId: string;
@@ -21,6 +22,7 @@ interface PaymentModalProps {
   subtotal: number;
   tax: number;
   total: number;
+  mergedTableNumber?: string; // Número de la mesa unida si existe
 }
 
 const PaymentModal: React.FC<PaymentModalProps> = ({
@@ -32,7 +34,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   customerName,
   subtotal,
   tax,
-  total
+  total,
+  mergedTableNumber
 }) => {
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card'>('cash');
   const [cashReceived, setCashReceived] = useState('');
@@ -49,17 +52,20 @@ ${config.restaurant_name}
 ================================
 Fecha: ${new Date().toLocaleDateString()}
 Hora: ${new Date().toLocaleTimeString()}
-Mesa: ${tableNumber}
+Mesa: ${tableNumber}${mergedTableNumber ? ` (unida con Mesa ${mergedTableNumber})` : ''}
 ${customerName ? `Cliente: ${customerName}` : ''}
 ================================
-${orderItems.map(item => 
-  `${item.productName}
-  ${item.quantity} x ${currencySymbol}${item.unitPrice.toFixed(2)} = ${currencySymbol}${item.totalPrice.toFixed(2)}`
-).join('\n')}
+${orderItems.map(item => {
+  const basePrice = calculateBasePrice(item.unitPrice);
+  const vatAmount = calculateVATAmount(item.unitPrice);
+  return `${item.productName}
+  ${item.quantity} x ${currencySymbol}${formatPrice(item.unitPrice)} (IVA incl.)
+    Base: ${currencySymbol}${formatPrice(basePrice)} + IVA: ${currencySymbol}${formatPrice(vatAmount)} = ${currencySymbol}${formatPrice(item.totalPrice)}`;
+}).join('\n')}
 ================================
-Subtotal: ${currencySymbol}${subtotal.toFixed(2)}
-IVA (${(getTaxRate() * 100).toFixed(0)}%): ${currencySymbol}${tax.toFixed(2)}
-TOTAL: ${currencySymbol}${total.toFixed(2)}
+Subtotal (sin IVA): ${currencySymbol}${formatPrice(subtotal)}
+IVA (21%): ${currencySymbol}${formatPrice(tax)}
+TOTAL (IVA incl.): ${currencySymbol}${formatPrice(total)}
 ================================
 Método de pago: ${paymentMethod === 'cash' ? 'Efectivo' : 'Tarjeta'}
 ${paymentMethod === 'cash' ? `Recibido: ${currencySymbol}${parseFloat(cashReceived).toFixed(2)}
@@ -136,16 +142,16 @@ Cambio: ${currencySymbol}${change.toFixed(2)}` : ''}
             <div className="bg-gray-50 rounded-lg p-4 mb-6">
               <div className="space-y-2">
                 <div className="flex justify-between">
-                  <span>Subtotal:</span>
-                  <span>{currencySymbol}{subtotal.toFixed(2)}</span>
+                  <span>Subtotal (sin IVA):</span>
+                  <span>{currencySymbol}{formatPrice(subtotal)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>IVA ({(getTaxRate() * 100).toFixed(0)}%):</span>
-                  <span>{currencySymbol}{tax.toFixed(2)}</span>
+                  <span>IVA (21%):</span>
+                  <span>{currencySymbol}{formatPrice(tax)}</span>
                 </div>
                 <div className="flex justify-between text-lg font-semibold border-t pt-2">
-                  <span>TOTAL:</span>
-                  <span className="text-primary-600">{currencySymbol}{total.toFixed(2)}</span>
+                  <span>TOTAL (IVA incl.):</span>
+                  <span className="text-primary-600">{currencySymbol}{formatPrice(total)}</span>
                 </div>
               </div>
             </div>

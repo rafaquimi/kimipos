@@ -40,6 +40,10 @@ interface TableContextType {
 	addTable: (table: TableData) => void;
 	removeTable: (tableId: string) => boolean;
 	updateTablePosition: (tableId: string, x: number, y: number) => void;
+	// Unión de mesas
+	mergeTables: (table1Id: string, table2Id: string) => void;
+	unmergeTables: (tableId: string) => void;
+	getTableMergeGroup: (tableId: string) => TableData[];
 	// Decoración
 	addDecor: (item: DecorData) => void;
 	updateDecorPosition: (id: string, x: number, y: number) => void;
@@ -184,19 +188,36 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 	};
 
 	const clearTableOrder = (tableId: string) => {
+		const table = getTableById(tableId);
+		let tablesToClear = [tableId];
+
+		// Si la mesa está unida, obtener todas las mesas del grupo
+		if (table && table.mergeGroup) {
+			const mergeGroup = getTableMergeGroup(tableId);
+			tablesToClear = mergeGroup.map(t => t.id);
+		}
+
+		// Limpiar todas las mesas del grupo (o solo la mesa individual)
 		setSalons(prev => prev.map(s => s.id !== activeSalonId ? s : ({
 			...s,
-			tables: s.tables.map(t => t.id === tableId ? ({
+			tables: s.tables.map(t => tablesToClear.includes(t.id) ? ({
 				...t,
 				status: 'available',
 				occupiedSince: undefined,
-				currentOrder: undefined
+				currentOrder: undefined,
+				// Limpiar también las propiedades de unión
+				mergedWith: undefined,
+				isMaster: undefined,
+				mergeGroup: undefined
 			}) : t)
 		})));
 
+		// Limpiar los items de todas las mesas del grupo
 		setTableOrderItems(prev => {
 			const n = { ...prev };
-			delete n[tableId];
+			tablesToClear.forEach(tId => {
+				delete n[tId];
+			});
 			return n;
 		});
 	};
@@ -262,6 +283,112 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		setSalons(prev => prev.map(s => s.id === salonId ? { ...s, name } : s));
 	};
 
+	// Funciones de unión de mesas
+	const mergeTables = (table1Id: string, table2Id: string) => {
+		// Obtener el grupo de unión actual de la mesa principal
+		const masterTable = getTableById(table1Id);
+		let mergeGroupId = masterTable?.mergeGroup;
+		
+		// Si la mesa principal no tiene grupo, crear uno nuevo
+		if (!mergeGroupId) {
+			mergeGroupId = `merge-${table1Id}-${Date.now()}`;
+		}
+
+		setSalons(prev => prev.map(s => s.id !== activeSalonId ? s : ({
+			...s,
+			tables: s.tables.map(t => {
+				if (t.id === table1Id) {
+					return {
+						...t,
+						mergedWith: table2Id,
+						isMaster: true,
+						mergeGroup: mergeGroupId
+					};
+				}
+				if (t.id === table2Id) {
+					return {
+						...t,
+						mergedWith: table1Id,
+						isMaster: false,
+						mergeGroup: mergeGroupId
+					};
+				}
+				return t;
+			})
+		})));
+
+		// Combinar los pedidos de la mesa 2 en la mesa 1
+		const table1Items = getTableOrderItems(table1Id);
+		const table2Items = getTableOrderItems(table2Id);
+		const combinedItems = [...table1Items, ...table2Items];
+
+		if (combinedItems.length > 0) {
+			const totalCombined = combinedItems.reduce((sum, item) => sum + item.totalPrice, 0);
+			
+			// Actualizar la mesa principal con el pedido combinado
+			setSalons(prev => prev.map(s => s.id !== activeSalonId ? s : ({
+				...s,
+				tables: s.tables.map(t => t.id === table1Id ? ({
+					...t,
+					status: 'occupied',
+					currentOrder: { 
+						id: `merged-order-${Date.now()}`, 
+						total: totalCombined, 
+						itemCount: combinedItems.length 
+					}
+				}) : t)
+			})));
+
+			// Guardar los items combinados en la mesa principal
+			setTableOrderItems(prev => ({
+				...prev,
+				[table1Id]: combinedItems,
+				[table2Id]: [] // Limpiar la mesa secundaria
+			}));
+		}
+	};
+
+	const unmergeTables = (tableId: string) => {
+		const table = getTableById(tableId);
+		if (!table || !table.mergedWith) return;
+
+		const mergedTableId = table.mergedWith;
+		
+		setSalons(prev => prev.map(s => s.id !== activeSalonId ? s : ({
+			...s,
+			tables: s.tables.map(t => {
+				if (t.id === tableId || t.id === mergedTableId) {
+					return {
+						...t,
+						mergedWith: undefined,
+						isMaster: undefined,
+						mergeGroup: undefined
+					};
+				}
+				return t;
+			})
+		})));
+
+		// Si hay pedidos, mantenerlos solo en la mesa principal
+		if (table.isMaster) {
+			// La mesa principal mantiene todos los pedidos
+		} else {
+			// Si estamos desuniendo desde la mesa secundaria, limpiarla
+			setTableOrderItems(prev => {
+				const newItems = { ...prev };
+				delete newItems[tableId];
+				return newItems;
+			});
+		}
+	};
+
+	const getTableMergeGroup = (tableId: string): TableData[] => {
+		const table = getTableById(tableId);
+		if (!table || !table.mergeGroup) return [table];
+
+		return activeSalon?.tables.filter(t => t.mergeGroup === table.mergeGroup) || [];
+	};
+
 	const value: TableContextType = {
 		salons,
 		activeSalonId,
@@ -279,6 +406,9 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		addTable,
 		removeTable,
 		updateTablePosition,
+		mergeTables,
+		unmergeTables,
+		getTableMergeGroup,
 		addDecor,
 		updateDecorPosition
 	};

@@ -14,6 +14,10 @@ import {
 } from 'lucide-react';
 import { useProducts, Product } from '../contexts/ProductContext';
 import { useConfig } from '../contexts/ConfigContext';
+import ColorPicker from '../components/ColorPicker';
+import ProductTariffManager from '../components/ProductTariffManager';
+import ProductCombinationManager from '../components/ProductCombinationManager';
+import { ProductTariff, ProductCombination } from '../types/product';
 import toast from 'react-hot-toast';
 
 const Products: React.FC = () => {
@@ -31,8 +35,11 @@ const Products: React.FC = () => {
     price: '',
     categoryId: '',
     description: '',
+    backgroundColor: '#3b82f6', // Color por defecto
     isActive: true
   });
+  const [productTariffs, setProductTariffs] = useState<ProductTariff[]>([]);
+  const [productCombinations, setProductCombinations] = useState<ProductCombination[]>([]);
 
   // Filtrar productos
   const filteredProducts = products.filter(product => {
@@ -51,8 +58,11 @@ const Products: React.FC = () => {
         price: product.price.toString(),
         categoryId: product.categoryId,
         description: product.description || '',
+        backgroundColor: product.backgroundColor || '#3b82f6',
         isActive: product.isActive
       });
+      setProductTariffs(product.tariffs || []);
+      setProductCombinations(product.combinations || []);
     } else {
       setEditingProduct(null);
       setFormData({
@@ -60,8 +70,11 @@ const Products: React.FC = () => {
         price: '',
         categoryId: categories[0]?.id || '',
         description: '',
+        backgroundColor: '#3b82f6',
         isActive: true
       });
+      setProductTariffs([]);
+      setProductCombinations([]);
     }
     setIsModalOpen(true);
   };
@@ -75,8 +88,11 @@ const Products: React.FC = () => {
       price: '',
       categoryId: '',
       description: '',
+      backgroundColor: '#3b82f6',
       isActive: true
     });
+    setProductTariffs([]);
+    setProductCombinations([]);
   };
 
   // Guardar producto
@@ -97,6 +113,9 @@ const Products: React.FC = () => {
       price,
       categoryId: formData.categoryId,
       description: formData.description.trim(),
+      backgroundColor: formData.backgroundColor,
+      tariffs: productTariffs,
+      combinations: productCombinations,
       isActive: formData.isActive
     };
 
@@ -189,7 +208,7 @@ const Products: React.FC = () => {
 
         {/* Lista de productos */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overflow-y-auto max-h-[600px]">
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
@@ -200,7 +219,13 @@ const Products: React.FC = () => {
                     Categoría
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Precio
+                    Precio/Tarifas
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Combinaciones
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Color
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Estado
@@ -242,9 +267,87 @@ const Products: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center text-sm font-medium text-gray-900">
-                          <DollarSign className="w-4 h-4 mr-1" />
-                          {getCurrencySymbol()}{product.price.toFixed(2)}
+                          {product.tariffs && product.tariffs.length > 0 ? (
+                            <div className="space-y-1">
+                              {product.tariffs.map((tariff, index) => (
+                                <div key={tariff.id} className="flex items-center space-x-2">
+                                  <span className={`text-xs px-2 py-1 rounded ${
+                                    tariff.isDefault 
+                                      ? 'bg-blue-100 text-blue-800' 
+                                      : 'bg-gray-100 text-gray-600'
+                                  }`}>
+                                    {tariff.name}
+                                  </span>
+                                  <span className="font-medium">
+                                    {getCurrencySymbol()}{tariff.price.toFixed(2)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <>
+                              <DollarSign className="w-4 h-4 mr-1" />
+                              {getCurrencySymbol()}{product.price.toFixed(2)}
+                            </>
+                                                )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center text-sm font-medium text-gray-900">
+                      {product.combinations && product.combinations.length > 0 ? (
+                        <div className="space-y-1">
+                          {product.combinations.filter(c => c.isActive).map((combination, index) => {
+                            const category = categories.find(c => c.id === combination.categoryId);
+                            const specificProduct = products.find(p => p.id === combination.productId);
+                            return (
+                              <div key={combination.id} className="flex items-center space-x-2">
+                                {combination.productId ? (
+                                  <>
+                                    <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">
+                                      {specificProduct?.name || 'Producto'}
+                                    </span>
+                                    <span className="text-xs bg-purple-50 text-purple-600 px-1 rounded">
+                                      Prod
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                      {category?.name || 'Categoría'}
+                                    </span>
+                                    <span className="text-xs bg-blue-50 text-blue-600 px-1 rounded">
+                                      Cat
+                                    </span>
+                                  </>
+                                )}
+                                <span className={`text-xs font-medium ${
+                                  combination.additionalPrice > 0 ? 'text-green-600' : 
+                                  combination.additionalPrice < 0 ? 'text-red-600' : 'text-gray-600'
+                                }`}>
+                                  {combination.additionalPrice > 0 ? '+' : ''}€{combination.additionalPrice.toFixed(2)}
+                                </span>
+                              </div>
+                            );
+                          })}
                         </div>
+                      ) : (
+                        <span className="text-gray-400 text-xs">Sin combinaciones</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                        {product.backgroundColor && (
+                          <div className="flex items-center space-x-2">
+                            <div
+                              className="w-6 h-6 rounded border border-gray-300"
+                              style={{ backgroundColor: product.backgroundColor }}
+                              title={product.backgroundColor}
+                            />
+                            <span className="text-xs text-gray-600 font-mono">
+                              {product.backgroundColor}
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -299,7 +402,7 @@ const Products: React.FC = () => {
       {/* Modal para crear/editar producto */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900">
@@ -376,6 +479,27 @@ const Products: React.FC = () => {
                     placeholder="Descripción opcional del producto"
                   />
                 </div>
+
+                {/* Color de fondo */}
+                <ColorPicker
+                  value={formData.backgroundColor}
+                  onChange={(color) => setFormData({ ...formData, backgroundColor: color })}
+                  label="Color de fondo del botón"
+                />
+
+                {/* Gestor de tarifas */}
+                <ProductTariffManager
+                  tariffs={productTariffs}
+                  onChange={setProductTariffs}
+                />
+
+                {/* Gestor de combinaciones */}
+                <ProductCombinationManager
+                  combinations={productCombinations}
+                  categories={categories}
+                  products={products}
+                  onChange={setProductCombinations}
+                />
 
                 {/* Estado activo */}
                 <div>

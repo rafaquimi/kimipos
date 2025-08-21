@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Search, Filter, MapPin } from 'lucide-react';
 import TableComponent, { TableData } from './TableComponent';
 import DecorItem from '../Decor/DecorItem';
+import TableConnections from './TableConnections';
 import { useTables } from '../../contexts/TableContext';
 
 interface TableSelectorModalProps {
@@ -109,6 +110,10 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
                   {decor.map((item) => (
                     <DecorItem key={item.id} item={item} />
                   ))}
+                  
+                  {/* Conexiones entre mesas unidas */}
+                  <TableConnections tables={filteredTables} scale={1} />
+                  
                   {filteredTables.map((table) => (
                     <TableComponent
                       key={table.id}
@@ -127,6 +132,14 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
               <div className="flex items-center space-x-2"><div className="w-4 h-4 bg-green-500 rounded-full"></div><span>Disponible</span></div>
               <div className="flex items-center space-x-2"><div className="w-4 h-4 bg-red-500 rounded-full"></div><span>Ocupada</span></div>
               <div className="flex items-center space-x-2"><div className="w-4 h-4 bg-yellow-500 rounded-full"></div><span>Reservada</span></div>
+              <div className="flex items-center space-x-2">
+                <div className="w-4 h-4 bg-purple-500 rounded-full border-2 border-purple-600"></div>
+                <span>Mesas Unidas</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-4 h-4 bg-yellow-400 rounded-full flex items-center justify-center text-xs">★</div>
+                <span>Mesa Principal</span>
+              </div>
             </div>
           </div>
 

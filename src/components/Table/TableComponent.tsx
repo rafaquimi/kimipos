@@ -15,6 +15,10 @@ export interface TableData {
     total: number;
     itemCount: number;
   };
+  // Propiedades para unión de mesas
+  mergedWith?: string; // ID de la mesa con la que está unida
+  mergeGroup?: string; // ID del grupo de unión para mesas múltiples
+  isMaster?: boolean; // Si es la mesa principal en una unión
 }
 
 interface TableComponentProps {
@@ -52,7 +56,32 @@ const TableComponent: React.FC<TableComponentProps> = ({
     });
   }, [table.x, table.y]);
 
+  // Función para generar colores únicos basados en mergeGroup
+  const getMergeGroupColor = (mergeGroup: string) => {
+    const colors = [
+      'border-purple-400 bg-purple-100 text-purple-800',
+      'border-indigo-400 bg-indigo-100 text-indigo-800', 
+      'border-pink-400 bg-pink-100 text-pink-800',
+      'border-orange-400 bg-orange-100 text-orange-800',
+      'border-cyan-400 bg-cyan-100 text-cyan-800',
+      'border-emerald-400 bg-emerald-100 text-emerald-800'
+    ];
+    
+    // Generar hash simple del mergeGroup para obtener color consistente
+    const hash = mergeGroup.split('').reduce((a, b) => {
+      a = ((a << 5) - a) + b.charCodeAt(0);
+      return a & a;
+    }, 0);
+    
+    return colors[Math.abs(hash) % colors.length];
+  };
+
   const getStatusColor = () => {
+    // Si la mesa está unida, usar color del grupo
+    if (table.mergeGroup) {
+      return getMergeGroupColor(table.mergeGroup);
+    }
+    
     switch (table.status) {
       case 'available':
         return 'bg-green-100 border-green-300 text-green-800';
@@ -179,21 +208,42 @@ const TableComponent: React.FC<TableComponentProps> = ({
           </div>
         )}
 
+        {/* Etiqueta de unión de mesas */}
+        {table.mergedWith && (
+          <div className="absolute -top-2 -right-2 bg-blue-600 text-white text-xs px-2 py-1 rounded-full border-2 border-white shadow-lg">
+            🔗{table.mergedWith}
+          </div>
+        )}
+
+        {/* Indicador de mesa principal */}
+        {table.mergeGroup && table.isMaster && (
+          <div className="absolute -left-2 -top-2 bg-yellow-500 text-white text-xs px-1.5 py-0.5 rounded-full border border-white shadow-sm">
+            ★
+          </div>
+        )}
+
         {/* Información adicional para mesas ocupadas */}
         {table.status === 'occupied' && (
           <>
-            {/* Tiempo transcurrido */}
-            {table.occupiedSince && (
+            {/* Tiempo transcurrido - solo en mesa principal o mesas no unidas */}
+            {table.occupiedSince && (!table.mergeGroup || table.isMaster) && (
               <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 bg-red-600 text-white text-xs px-2 py-1 rounded-full flex items-center space-x-1">
                 <Clock className="w-3 h-3" />
                 <span>{getTimeElapsed()}</span>
               </div>
             )}
             
-            {/* Total del pedido */}
-            {table.currentOrder && (
+            {/* Total del pedido - solo en mesa principal o mesas no unidas */}
+            {table.currentOrder && (!table.mergeGroup || table.isMaster) && (
               <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded-full">
                 ${table.currentOrder.total.toFixed(2)}
+              </div>
+            )}
+
+            {/* Etiqueta para mesa secundaria unida - solo indicador visual */}
+            {table.mergeGroup && !table.isMaster && (
+              <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white text-xs px-1 py-0.5 rounded-full">
+                🔗
               </div>
             )}
           </>

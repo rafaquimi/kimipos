@@ -10,15 +10,22 @@ import {
   CreditCard,
   Calculator,
   MapPin,
-  DollarSign
+  DollarSign,
+  Link2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import TableSelectorModal from '../components/Table/TableSelectorModal';
 import PaymentModal from '../components/Payment/PaymentModal';
+import MergeTablesModal from '../components/Table/MergeTablesModal';
+import NumericKeypad from '../components/NumericKeypad';
+import TariffSelectorModal from '../components/TariffSelectorModal';
+import CombinationSelectorModal from '../components/CombinationSelectorModal';
 import { TableData } from '../components/Table/TableComponent';
 import { useTables } from '../contexts/TableContext';
 import { useConfig } from '../contexts/ConfigContext';
 import { useProducts } from '../contexts/ProductContext';
+import { calculateTotalBase, calculateTotalVAT, calculateTotalWithVAT, formatPrice } from '../utils/taxUtils';
+import { ProductTariff } from '../types/product';
 
 interface OrderItem {
   productId: string;
@@ -37,8 +44,15 @@ const Dashboard: React.FC = () => {
   const [selectedTable, setSelectedTable] = useState<TableData | null>(null);
   const [isTableModalOpen, setIsTableModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+  const [showNumericKeypad, setShowNumericKeypad] = useState(false);
+  const [editingPriceFor, setEditingPriceFor] = useState<string | null>(null);
+  const [showTariffSelector, setShowTariffSelector] = useState(false);
+  const [selectedProductForTariff, setSelectedProductForTariff] = useState<any>(null);
+  const [showCombinationSelector, setShowCombinationSelector] = useState(false);
+  const [selectedProductForCombination, setSelectedProductForCombination] = useState<any>(null);
   
-  const { addOrderToTable, getTableOrderItems, clearTableOrder } = useTables();
+  const { addOrderToTable, getTableOrderItems, clearTableOrder, unmergeTables } = useTables();
   const { getCurrencySymbol, getTaxRate } = useConfig();
   const { products, categories } = useProducts();
 
@@ -54,7 +68,7 @@ const Dashboard: React.FC = () => {
   });
 
   // Funciones del carrito
-  const addToOrder = (product: any) => {
+  const addToOrder = (product: any, selectedTariff?: ProductTariff) => {
     const existingItem = currentOrder.find(item => item.productId === product.id);
     
     if (existingItem) {
@@ -64,16 +78,76 @@ const Dashboard: React.FC = () => {
           : item
       ));
     } else {
+      const tariff = selectedTariff || product.tariffs?.find((t: ProductTariff) => t.isDefault) || { price: product.price };
       const newItem: OrderItem = {
         productId: product.id,
-        productName: product.name,
+        productName: `${product.name}${selectedTariff ? ` - ${selectedTariff.name}` : ''}`,
         quantity: 1,
-        unitPrice: product.price,
-        totalPrice: product.price,
+        unitPrice: tariff.price,
+        totalPrice: tariff.price,
         status: 'pending'
       };
       setCurrentOrder([...currentOrder, newItem]);
     }
+  };
+
+  const handleProductClick = (product: any) => {
+    // Si el producto tiene combinaciones activas, mostrar selector de combinaciones
+    if (product.combinations && product.combinations.some((c: any) => c.isActive)) {
+      setSelectedProductForCombination(product);
+      setShowCombinationSelector(true);
+    }
+    // Si el producto tiene múltiples tarifas, mostrar selector
+    else if (product.tariffs && product.tariffs.length > 1) {
+      setSelectedProductForTariff(product);
+      setShowTariffSelector(true);
+    } else {
+      // Si solo tiene una tarifa o no tiene tarifas, agregar directamente
+      addToOrder(product);
+    }
+  };
+
+  const handleTariffSelect = (tariff: ProductTariff) => {
+    if (selectedProductForTariff) {
+      addToOrder(selectedProductForTariff, tariff);
+    }
+  };
+
+  const handleCombinationConfirm = (baseProduct: any, selectedProducts: Array<{product: any, quantity: number}>) => {
+    // Crear un nombre descriptivo para la combinación
+    const combinationNames = selectedProducts.map(sp => 
+      `${sp.product.name}${sp.quantity > 1 ? ` (x${sp.quantity})` : ''}`
+    ).join(' + ');
+    
+    const productName = `${baseProduct.name} con ${combinationNames}`;
+    
+    // Calcular el precio total
+    const basePrice = baseProduct.price;
+    const combinationPrice = selectedProducts.reduce((total, sp) => {
+      // Buscar primero combinación específica por producto
+      const specificCombination = baseProduct.combinations.find((c: any) => c.productId === sp.product.id);
+      if (specificCombination) {
+        return total + (specificCombination.additionalPrice * sp.quantity);
+      }
+      
+      // Si no hay combinación específica, buscar por categoría
+      const categoryCombination = baseProduct.combinations.find((c: any) => c.categoryId === sp.product.categoryId);
+      return total + ((categoryCombination?.additionalPrice || 0) * sp.quantity);
+    }, 0);
+    
+    const totalPrice = basePrice + combinationPrice;
+    
+    // Agregar al carrito
+    const newItem: OrderItem = {
+      productId: baseProduct.id,
+      productName: productName,
+      quantity: 1,
+      unitPrice: totalPrice,
+      totalPrice: totalPrice,
+      status: 'pending'
+    };
+    
+    setCurrentOrder([...currentOrder, newItem]);
   };
 
   const updateQuantity = (productId: string, delta: number) => {
@@ -86,6 +160,53 @@ const Dashboard: React.FC = () => {
       }
       return item;
     }).filter(Boolean) as OrderItem[]);
+  };
+
+  const updateUnitPrice = (productId: string, newPrice: number) => {
+    setCurrentOrder(currentOrder.map(item => {
+      if (item.productId === productId) {
+        return { 
+          ...item, 
+          unitPrice: newPrice, 
+          totalPrice: item.quantity * newPrice
+        };
+      }
+      return item;
+    }));
+  };
+
+  const handlePriceConfirm = (newPrice: number) => {
+    if (editingPriceFor) {
+      updateUnitPrice(editingPriceFor, newPrice);
+    }
+    setShowNumericKeypad(false);
+    setEditingPriceFor(null);
+  };
+
+  const handlePriceCancel = () => {
+    setShowNumericKeypad(false);
+    setEditingPriceFor(null);
+  };
+
+  const togglePriceEdit = (productId: string) => {
+    setEditingPriceFor(productId);
+    setShowNumericKeypad(true);
+  };
+
+  const resetToOriginalPrice = (productId: string) => {
+    const product = products.find(p => p.id === productId);
+    if (product) {
+      setCurrentOrder(currentOrder.map(item => {
+        if (item.productId === productId) {
+          return { 
+            ...item, 
+            unitPrice: product.price, 
+            totalPrice: item.quantity * product.price
+          };
+        }
+        return item;
+      }));
+    }
   };
 
   const removeFromOrder = (productId: string) => {
@@ -115,12 +236,13 @@ const Dashboard: React.FC = () => {
   };
 
   const calculateTotal = () => {
-    const subtotal = currentOrder.reduce((sum, item) => sum + item.totalPrice, 0);
-    const tax = subtotal * getTaxRate();
+    const subtotal = calculateTotalBase(currentOrder);
+    const tax = calculateTotalVAT(currentOrder);
+    const total = calculateTotalWithVAT(currentOrder);
     return {
       subtotal,
       tax,
-      total: subtotal + tax
+      total
     };
   };
 
@@ -145,6 +267,59 @@ const Dashboard: React.FC = () => {
     // Limpiar solo el carrito local, mantener la mesa seleccionada
     setCurrentOrder([]);
     setCustomerName('');
+  };
+
+  const clearTableCompleteOrder = () => {
+    if (!selectedTable) {
+      toast.error('Debes seleccionar una mesa primero');
+      return;
+    }
+
+    if (selectedTable.status !== 'occupied') {
+      toast.error('La mesa no tiene pedidos activos');
+      return;
+    }
+
+    // Mostrar confirmación
+    if (window.confirm(`¿Estás seguro de que quieres vaciar completamente el ticket de la Mesa ${selectedTable.number}? Esta acción no se puede deshacer.`)) {
+      // Limpiar el pedido de la mesa (esto libera la mesa automáticamente)
+      clearTableOrder(selectedTable.id);
+      
+      // Limpiar también el carrito local si es de esta mesa
+      setCurrentOrder([]);
+      setCustomerName('');
+      
+      // Actualizar la mesa seleccionada para reflejar el nuevo estado
+      setSelectedTable({
+        ...selectedTable,
+        status: 'available',
+        occupiedSince: undefined,
+        currentOrder: undefined
+      });
+      
+      toast.success(`Mesa ${selectedTable.number} vaciada y liberada exitosamente`);
+    }
+  };
+
+  const handleUnmergeTables = () => {
+    if (!selectedTable || !selectedTable.mergedWith) {
+      toast.error('La mesa seleccionada no está unida a otra mesa');
+      return;
+    }
+    
+    if (window.confirm(`¿Estás seguro de que quieres desunir la Mesa ${selectedTable.number}?`)) {
+      unmergeTables(selectedTable.id);
+      
+      // Actualizar la mesa seleccionada para reflejar el nuevo estado
+      setSelectedTable({
+        ...selectedTable,
+        mergedWith: undefined,
+        isMaster: undefined,
+        mergeGroup: undefined
+      });
+      
+      toast.success(`Mesa ${selectedTable.number} desunida exitosamente`);
+    }
   };
 
   const { subtotal, tax, total } = calculateTotal();
@@ -215,14 +390,37 @@ const Dashboard: React.FC = () => {
             {filteredProducts.map((product) => (
               <div
                 key={product.id}
-                onClick={() => addToOrder(product)}
-                className="product-card bg-gradient-to-br from-white via-white to-gray-50/50 hover:from-blue-50 hover:via-white hover:to-indigo-50 cursor-pointer p-6 rounded-2xl shadow-md border border-gray-200/50 hover:border-blue-300 transition-all duration-300 hover:shadow-xl hover:shadow-blue-200/25 hover:scale-105 backdrop-blur-sm min-h-[120px] flex flex-col justify-center"
+                onClick={() => handleProductClick(product)}
+                className="product-card cursor-pointer p-6 rounded-2xl shadow-md border border-gray-200/50 transition-all duration-300 hover:shadow-xl hover:scale-105 backdrop-blur-sm min-h-[120px] flex flex-col justify-center"
+                style={{
+                  background: product.backgroundColor 
+                    ? `linear-gradient(135deg, ${product.backgroundColor}15, ${product.backgroundColor}25, ${product.backgroundColor}15)`
+                    : 'linear-gradient(135deg, #ffffff, #f8fafc, #ffffff)',
+                  borderColor: product.backgroundColor ? `${product.backgroundColor}40` : '#e5e7eb',
+                }}
+                onMouseEnter={(e) => {
+                  if (product.backgroundColor) {
+                    e.currentTarget.style.background = `linear-gradient(135deg, ${product.backgroundColor}25, ${product.backgroundColor}35, ${product.backgroundColor}25)`;
+                    e.currentTarget.style.borderColor = `${product.backgroundColor}60`;
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (product.backgroundColor) {
+                    e.currentTarget.style.background = `linear-gradient(135deg, ${product.backgroundColor}15, ${product.backgroundColor}25, ${product.backgroundColor}15)`;
+                    e.currentTarget.style.borderColor = `${product.backgroundColor}40`;
+                  }
+                }}
               >
                 <div className="text-center">
                   <h3 className="font-semibold text-gray-900 text-base mb-3 line-clamp-2 leading-tight">
                     {product.name}
                   </h3>
-                  <p className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                  <p 
+                    className="text-xl font-bold"
+                    style={{
+                      color: product.backgroundColor || '#3b82f6'
+                    }}
+                  >
                     {getCurrencySymbol()}{product.price.toFixed(2)}
                   </p>
                 </div>
@@ -318,14 +516,36 @@ const Dashboard: React.FC = () => {
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <h4 className="font-medium text-gray-900 text-sm">{item.productName}</h4>
-                                             <p className="text-sm text-gray-600">{getCurrencySymbol()}{item.unitPrice.toFixed(2)} c/u</p>
+                      <div className="flex items-center space-x-1 mt-1">
+                        <button
+                          onClick={() => togglePriceEdit(item.productId)}
+                          className={`text-sm hover:underline cursor-pointer flex items-center ${
+                            item.unitPrice !== products.find(p => p.id === item.productId)?.price
+                              ? 'text-blue-600 font-medium'
+                              : 'text-gray-600'
+                          }`}
+                          title="Haz clic para editar el precio (IVA incluido)"
+                        >
+                          {getCurrencySymbol()}{formatPrice(item.unitPrice)} c/u (IVA incl.)
+                          <DollarSign className="w-3 h-3 ml-1 opacity-50" />
+                        </button>
+                        {item.unitPrice !== products.find(p => p.id === item.productId)?.price && (
+                          <button
+                            onClick={() => resetToOriginalPrice(item.productId)}
+                            className="text-xs text-gray-400 hover:text-blue-600 p-1 rounded hover:bg-blue-50"
+                            title="Restaurar precio original"
+                          >
+                            ↺
+                          </button>
+                        )}
+                      </div>
                     </div>
-                                      <button
-                    onClick={() => removeFromOrder(item.productId)}
-                    className="p-3 text-red-600 hover:bg-red-100 rounded-lg transition-all duration-200 hover:scale-110 min-w-[44px] min-h-[44px] flex items-center justify-center"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </button>
+                    <button
+                      onClick={() => removeFromOrder(item.productId)}
+                      className="p-3 text-red-600 hover:bg-red-100 rounded-lg transition-all duration-200 hover:scale-110 min-w-[44px] min-h-[44px] flex items-center justify-center"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
                   </div>
                   
                   <div className="flex items-center justify-between mt-2">
@@ -359,16 +579,16 @@ const Dashboard: React.FC = () => {
           <div className="border-t border-gray-200/50 p-6 space-y-4 bg-gradient-to-r from-blue-50/50 to-indigo-50/50">
             <div className="space-y-2">
                              <div className="flex justify-between text-sm">
-                 <span>Subtotal:</span>
-                 <span>{getCurrencySymbol()}{subtotal.toFixed(2)}</span>
+                 <span>Subtotal (sin IVA):</span>
+                 <span>{getCurrencySymbol()}{formatPrice(subtotal)}</span>
                </div>
                <div className="flex justify-between text-sm">
-                 <span>IVA ({getTaxRate() * 100}%):</span>
-                 <span>{getCurrencySymbol()}{tax.toFixed(2)}</span>
+                 <span>IVA (21%):</span>
+                 <span>{getCurrencySymbol()}{formatPrice(tax)}</span>
                </div>
                <div className="flex justify-between text-xl font-bold border-t pt-3 border-gray-300">
-                 <span className="text-gray-800">Total:</span>
-                 <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">{getCurrencySymbol()}{total.toFixed(2)}</span>
+                 <span className="text-gray-800">Total (IVA incl.):</span>
+                 <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">{getCurrencySymbol()}{formatPrice(total)}</span>
                </div>
             </div>
 
@@ -381,26 +601,55 @@ const Dashboard: React.FC = () => {
                 <span>Procesar Pedido</span>
               </button>
               
-              <div className="grid grid-cols-2 gap-3">
-                <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-4 rounded-xl font-medium flex items-center justify-center space-x-2 transition-all duration-200 hover:shadow-md">
+              <div className="grid grid-cols-3 gap-2">
+                <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-2 rounded-xl font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-md text-sm">
                   <Calculator className="w-4 h-4" />
                   <span>Dividir</span>
                 </button>
-                <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-4 rounded-xl font-medium flex items-center justify-center space-x-2 transition-all duration-200 hover:shadow-md">
+                <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-2 rounded-xl font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-md text-sm">
                   <CreditCard className="w-4 h-4" />
                   <span>Tarjeta</span>
+                </button>
+                <button 
+                  onClick={() => setIsMergeModalOpen(true)}
+                  className="bg-blue-100 hover:bg-blue-200 text-blue-700 py-3 px-2 rounded-xl font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-md text-sm"
+                >
+                  <Link2 className="w-4 h-4" />
+                  <span>Unir</span>
                 </button>
               </div>
                
               {/* Botón para cobrar mesa si está ocupada */}
               {selectedTable && selectedTable.status === 'occupied' && (
-                <button
-                  onClick={() => setIsPaymentModalOpen(true)}
-                  className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white py-4 px-6 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
-                >
-                  <DollarSign className="w-5 h-5" />
-                  <span>Cobrar Mesa</span>
-                </button>
+                <>
+                  <button
+                    onClick={() => setIsPaymentModalOpen(true)}
+                    className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white py-4 px-6 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
+                  >
+                    <DollarSign className="w-5 h-5" />
+                    <span>Cobrar Mesa</span>
+                  </button>
+                  
+                  {/* Botón para vaciar completamente el ticket de la mesa */}
+                  <button
+                    onClick={clearTableCompleteOrder}
+                    className="w-full bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white py-4 px-6 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                    <span>Vaciar Ticket Mesa</span>
+                  </button>
+
+                  {/* Botón para desunir mesas si está unida */}
+                  {selectedTable.mergedWith && (
+                    <button
+                      onClick={handleUnmergeTables}
+                      className="w-full bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-700 hover:to-violet-700 text-white py-4 px-6 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
+                    >
+                      <Link2 className="w-5 h-5 transform rotate-45" />
+                      <span>Desunir de Mesa {selectedTable.mergedWith}</span>
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -424,7 +673,13 @@ const Dashboard: React.FC = () => {
              clearTableOrder(selectedTable.id);
              setSelectedTable(null);
              setCurrentOrder([]);
-             toast.success(`Mesa ${selectedTable.number} cobrada y liberada`);
+             
+             // Mensaje especial si era una mesa unida
+             const message = selectedTable.mergedWith 
+               ? `Mesas ${selectedTable.number} y ${selectedTable.mergedWith} cobradas y liberadas`
+               : `Mesa ${selectedTable.number} cobrada y liberada`;
+             
+             toast.success(message);
            }
          }}
          orderItems={currentOrder}
@@ -433,7 +688,55 @@ const Dashboard: React.FC = () => {
          subtotal={subtotal}
          tax={tax}
          total={total}
+         mergedTableNumber={selectedTable?.mergedWith}
        />
+
+       {/* Modal de unión de mesas */}
+       <MergeTablesModal
+         isOpen={isMergeModalOpen}
+         onClose={() => setIsMergeModalOpen(false)}
+       />
+
+               {/* Teclado numérico */}
+        {showNumericKeypad && editingPriceFor && (
+          <NumericKeypad
+            value={currentOrder.find(item => item.productId === editingPriceFor)?.unitPrice || 0}
+            onConfirm={handlePriceConfirm}
+            onCancel={handlePriceCancel}
+            currencySymbol={getCurrencySymbol()}
+          />
+        )}
+
+        {/* Modal de selección de tarifas */}
+        {showTariffSelector && selectedProductForTariff && (
+          <TariffSelectorModal
+            isOpen={showTariffSelector}
+            onClose={() => {
+              setShowTariffSelector(false);
+              setSelectedProductForTariff(null);
+            }}
+            productName={selectedProductForTariff.name}
+            tariffs={selectedProductForTariff.tariffs || []}
+            onSelectTariff={handleTariffSelect}
+            currencySymbol={getCurrencySymbol()}
+          />
+        )}
+
+        {/* Modal de selección de combinaciones */}
+        {showCombinationSelector && selectedProductForCombination && (
+          <CombinationSelectorModal
+            isOpen={showCombinationSelector}
+            onClose={() => {
+              setShowCombinationSelector(false);
+              setSelectedProductForCombination(null);
+            }}
+            baseProduct={selectedProductForCombination}
+            combinations={selectedProductForCombination.combinations || []}
+            availableProducts={activeProducts}
+            onConfirmCombination={handleCombinationConfirm}
+            currencySymbol={getCurrencySymbol()}
+          />
+        )}
      </div>
    );
  };
