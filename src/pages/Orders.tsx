@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { 
   Search, 
@@ -17,38 +18,42 @@ import { es } from 'date-fns/locale';
 
 const Orders: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('');
-  const [dateFilter, setDateFilter] = useState<string>('');
+  // Por defecto: mostrar tickets cerrados (pagados) del día de hoy
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  const [statusFilter, setStatusFilter] = useState<string>('paid');
+  const [dateFilter, setDateFilter] = useState<string>(todayStr);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const navigate = useNavigate();
 
   // Queries
-  const orders = useLiveQuery(() => {
-    let query = db.orders.toCollection();
-    
-    if (statusFilter) {
-      query = query.filter(order => order.status === statusFilter);
+  const orders = useLiveQuery(async () => {
+    try {
+      let query = db.orders.toCollection();
+      if (statusFilter) {
+        query = query.filter(order => order.status === statusFilter);
+      }
+      if (dateFilter) {
+        const filterDate = new Date(dateFilter);
+        const nextDay = new Date(filterDate.getTime() + 24 * 60 * 60 * 1000);
+        query = query.filter(order => order.createdAt >= filterDate && order.createdAt < nextDay);
+      }
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        query = query.filter(order => 
+          order.customerName?.toLowerCase().includes(term) ||
+          order.waiterName?.toLowerCase().includes(term) ||
+          String(order.id ?? '').includes(searchTerm)
+        );
+      }
+      return await query.reverse().sortBy('createdAt');
+    } catch (e) {
+      console.error('Error cargando pedidos:', e);
+      return [] as Order[];
     }
-    
-    if (dateFilter) {
-      const filterDate = new Date(dateFilter);
-      const nextDay = new Date(filterDate.getTime() + 24 * 60 * 60 * 1000);
-      query = query.filter(order => 
-        order.createdAt >= filterDate && order.createdAt < nextDay
-      );
-    }
-    
-    if (searchTerm) {
-      query = query.filter(order => 
-        order.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.waiterName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.id?.toString().includes(searchTerm)
-      );
-    }
-    
-    return query.reverse().sortBy('createdAt');
-  }, [statusFilter, dateFilter, searchTerm]);
+  }, [statusFilter, dateFilter, searchTerm]) || [];
 
-  const tables = useLiveQuery(() => db.tables.toArray());
+  const tables = useLiveQuery(() => db.posTables.toArray()) || [];
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -169,7 +174,7 @@ const Orders: React.FC = () => {
 
         {/* Lista de pedidos */}
         <div className="flex-1 overflow-auto">
-          {orders?.map((order) => (
+          {orders.length > 0 && orders.map((order) => (
             <div
               key={order.id}
               onClick={() => setSelectedOrder(order)}
@@ -216,7 +221,7 @@ const Orders: React.FC = () => {
             </div>
           ))}
 
-          {orders?.length === 0 && (
+          {orders.length === 0 && (
             <div className="flex items-center justify-center h-64">
               <div className="text-center">
                 <Receipt className="w-12 h-12 text-gray-300 mx-auto mb-4" />
@@ -257,6 +262,18 @@ const Orders: React.FC = () => {
                     <option value="paid">Pagado</option>
                     <option value="cancelled">Cancelado</option>
                   </select>
+                  <button
+                    onClick={() => {
+                      if (selectedOrder?.id) {
+                        localStorage.setItem('orderToEdit', String(selectedOrder.id));
+                        navigate('/');
+                      }
+                    }}
+                    className="px-3 py-2 rounded-lg border border-primary-500 text-primary-700 hover:bg-primary-50"
+                    title="Editar este ticket en el Dashboard"
+                  >
+                    Editar en Dashboard
+                  </button>
                 </div>
               </div>
 

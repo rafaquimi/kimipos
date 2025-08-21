@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { X, Receipt, CreditCard, DollarSign, Printer, Download } from 'lucide-react';
+import { X, Receipt, CreditCard, DollarSign, Printer, Download, FileText } from 'lucide-react';
 import { useConfig } from '../../contexts/ConfigContext';
+import { db } from '../../database/db';
 import { calculateBasePrice, calculateVATAmount, formatPrice } from '../../utils/taxUtils';
+import { generatePOSTicketPDF, openPDFInNewWindow } from '../../utils/pdfGenerator';
 
 interface OrderItem {
   productId: string;
@@ -23,6 +25,13 @@ interface PaymentModalProps {
   tax: number;
   total: number;
   mergedTableNumber?: string; // Número de la mesa unida si existe
+  titleOverride?: string;
+  skipDbSave?: boolean;
+  defaultPaymentMethod?: 'cash' | 'card';
+  originalOrderItems?: OrderItem[]; // Para mostrar el ticket real cuando es edición
+  originalSubtotal?: number;
+  originalTax?: number;
+  originalTotal?: number;
 }
 
 const PaymentModal: React.FC<PaymentModalProps> = ({
@@ -35,9 +44,16 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   subtotal,
   tax,
   total,
-  mergedTableNumber
+  mergedTableNumber,
+  titleOverride,
+  skipDbSave = false,
+  defaultPaymentMethod = 'cash',
+  originalOrderItems,
+  originalSubtotal,
+  originalTax,
+  originalTotal
 }) => {
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card'>(defaultPaymentMethod);
   const [cashReceived, setCashReceived] = useState('');
   const { getCurrencySymbol, getTaxRate, config } = useConfig();
 
@@ -45,49 +61,92 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
   const currencySymbol = getCurrencySymbol();
   const change = parseFloat(cashReceived) - total;
+  
+  // Detectar si es una devolución (total negativo o producto de diferencia negativa)
+  const isRefund = total < 0 || orderItems.some(item => item.productName.includes('(-)'));
+  const isAdjustment = orderItems.some(item => item.productId === 'diff');
 
-  const generateTicket = () => {
-    const ticketContent = `
-${config.restaurant_name}
-================================
-Fecha: ${new Date().toLocaleDateString()}
-Hora: ${new Date().toLocaleTimeString()}
-Mesa: ${tableNumber}${mergedTableNumber ? ` (unida con Mesa ${mergedTableNumber})` : ''}
-${customerName ? `Cliente: ${customerName}` : ''}
-================================
-${orderItems.map(item => {
-  const basePrice = calculateBasePrice(item.unitPrice);
-  const vatAmount = calculateVATAmount(item.unitPrice);
-  return `${item.productName}
-  ${item.quantity} x ${currencySymbol}${formatPrice(item.unitPrice)} (IVA incl.)
-    Base: ${currencySymbol}${formatPrice(basePrice)} + IVA: ${currencySymbol}${formatPrice(vatAmount)} = ${currencySymbol}${formatPrice(item.totalPrice)}`;
-}).join('\n')}
-================================
-Subtotal (sin IVA): ${currencySymbol}${formatPrice(subtotal)}
-IVA (21%): ${currencySymbol}${formatPrice(tax)}
-TOTAL (IVA incl.): ${currencySymbol}${formatPrice(total)}
-================================
-Método de pago: ${paymentMethod === 'cash' ? 'Efectivo' : 'Tarjeta'}
-${paymentMethod === 'cash' ? `Recibido: ${currencySymbol}${parseFloat(cashReceived).toFixed(2)}
-Cambio: ${currencySymbol}${change.toFixed(2)}` : ''}
-================================
-¡Gracias por su visita!
-    `.trim();
+  const generateTicketPDF = () => {
+    try {
+      console.log('Iniciando generación de PDF...');
+      
+      // Usar los datos originales del ticket si están disponibles (edición), sino los actuales
+      const itemsToShow = originalOrderItems || orderItems;
+      const subtotalToShow = originalSubtotal !== undefined ? originalSubtotal : subtotal;
+      const taxToShow = originalTax !== undefined ? originalTax : tax;
+      const totalToShow = originalTotal !== undefined ? originalTotal : total;
+      
+      console.log('Datos del ticket:', {
+        itemsToShow,
+        subtotalToShow,
+        taxToShow,
+        totalToShow,
+        tableNumber,
+        paymentMethod
+      });
+      
+      const ticketData = {
+        restaurantName: config.restaurant_name || 'Restaurante',
+        tableNumber,
+        customerName,
+        mergedTableNumber,
+        orderItems: itemsToShow,
+        subtotal: subtotalToShow,
+        tax: taxToShow,
+        total: totalToShow,
+        paymentMethod,
+        cashReceived: paymentMethod === 'cash' ? cashReceived : undefined,
+        currencySymbol
+      };
 
-    // Crear archivo para descargar
-    const blob = new Blob([ticketContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `ticket-mesa-${tableNumber}-${new Date().toISOString().slice(0, 10)}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+      console.log('Generando PDF con datos:', ticketData);
+      const pdfDataUrl = generatePOSTicketPDF(ticketData);
+      console.log('PDF generado, abriendo ventana...');
+      
+      const fileName = `ticket-mesa-${tableNumber}-${new Date().toISOString().slice(0, 10)}`;
+      
+      // Abrir PDF en nueva ventana/popup
+      openPDFInNewWindow(pdfDataUrl, fileName);
+      console.log('PDF abierto exitosamente');
+      
+    } catch (error) {
+      console.error('Error generando ticket PDF:', error);
+      alert(`Error al generar el ticket PDF: ${error.message}`);
+    }
   };
 
-  const handlePaymentComplete = () => {
-    generateTicket();
+
+
+  const handlePaymentComplete = async () => {
+    // Generar PDF automáticamente al completar pago
+    generateTicketPDF();
+    if (!skipDbSave) {
+      try {
+        // Guardar ticket cobrado en Dexie como "paid"
+        await db.orders.add({
+          tableId: tableNumber ? parseInt(tableNumber) : undefined,
+          customerName: customerName || undefined,
+          status: 'paid',
+          items: orderItems.map(i => ({
+            productId: 0,
+            productName: i.productName,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+            totalPrice: i.totalPrice,
+            status: 'delivered'
+          })),
+          subtotal,
+          tax,
+          discount: 0,
+          total,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          closedAt: new Date(),
+        });
+      } catch (e) {
+        console.error('Error guardando ticket en DB:', e);
+      }
+    }
     onPaymentComplete();
     onClose();
   };
@@ -104,11 +163,11 @@ Cambio: ${currencySymbol}${change.toFixed(2)}` : ''}
         {/* Modal */}
         <div className="inline-block w-full max-w-2xl my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-xl rounded-lg">
           {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <div className={`flex items-center justify-between p-6 border-b ${isRefund ? 'border-red-200 bg-red-50' : 'border-gray-200'}`}>
             <div className="flex items-center space-x-3">
-              <Receipt className="w-6 h-6 text-primary-600" />
-              <h2 className="text-xl font-semibold text-gray-900">
-                Cobro - Mesa {tableNumber}
+              <Receipt className={`w-6 h-6 ${isRefund ? 'text-red-600' : 'text-primary-600'}`} />
+              <h2 className={`text-xl font-semibold ${isRefund ? 'text-red-700' : 'text-gray-900'}`}>
+                {isRefund ? '⚠️ DEVOLUCIÓN' : (isAdjustment ? 'Cobro de Diferencia' : (titleOverride || `Cobro - Mesa ${tableNumber}`))}
               </h2>
             </div>
             <button
@@ -125,34 +184,46 @@ Cambio: ${currencySymbol}${change.toFixed(2)}` : ''}
             <div className="mb-6">
               <h3 className="text-lg font-semibold mb-3">Resumen del Pedido</h3>
               <div className="bg-gray-50 rounded-lg p-4 max-h-48 overflow-y-auto">
-                {orderItems.map((item, index) => (
-                  <div key={index} className="flex justify-between items-center py-1">
-                    <span className="text-sm">
-                      {item.quantity}x {item.productName}
-                    </span>
-                    <span className="text-sm font-medium">
-                      {currencySymbol}{item.totalPrice.toFixed(2)}
-                    </span>
-                  </div>
-                ))}
+                {orderItems.map((item, index) => {
+                  const isNegativeItem = item.productName.includes('(-)');
+                  return (
+                    <div key={index} className="flex justify-between items-center py-1">
+                      <span className={`text-sm ${isNegativeItem ? 'text-red-700 font-medium' : ''}`}>
+                        {item.quantity}x {item.productName}
+                      </span>
+                      <span className={`text-sm font-medium ${isNegativeItem ? 'text-red-700' : ''}`}>
+                        {isNegativeItem ? '-' : ''}{currencySymbol}{Math.abs(item.totalPrice).toFixed(2)}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
             {/* Totales */}
-            <div className="bg-gray-50 rounded-lg p-4 mb-6">
+            <div className={`rounded-lg p-4 mb-6 ${isRefund ? 'bg-red-50 border-2 border-red-200' : 'bg-gray-50'}`}>
               <div className="space-y-2">
                 <div className="flex justify-between">
                   <span>Subtotal (sin IVA):</span>
-                  <span>{currencySymbol}{formatPrice(subtotal)}</span>
+                  <span className={isRefund ? 'text-red-700' : ''}>{isRefund && subtotal < 0 ? '-' : ''}{currencySymbol}{formatPrice(Math.abs(subtotal))}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>IVA (21%):</span>
-                  <span>{currencySymbol}{formatPrice(tax)}</span>
+                  <span className={isRefund ? 'text-red-700' : ''}>{isRefund && tax < 0 ? '-' : ''}{currencySymbol}{formatPrice(Math.abs(tax))}</span>
                 </div>
                 <div className="flex justify-between text-lg font-semibold border-t pt-2">
                   <span>TOTAL (IVA incl.):</span>
-                  <span className="text-primary-600">{currencySymbol}{formatPrice(total)}</span>
+                  <span className={`${isRefund ? 'text-red-700 font-bold' : 'text-primary-600'}`}>
+                    {isRefund && total < 0 ? '-' : ''}{currencySymbol}{formatPrice(Math.abs(total))}
+                  </span>
                 </div>
+                {isRefund && (
+                  <div className="mt-3 p-3 bg-red-100 border border-red-300 rounded-lg">
+                    <p className="text-red-800 text-sm font-medium">
+                      🔴 ATENCIÓN: Debe devolver {currencySymbol}{formatPrice(Math.abs(total))} al cliente
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -212,21 +283,24 @@ Cambio: ${currencySymbol}${change.toFixed(2)}` : ''}
             )}
 
             {/* Botones de acción */}
-            <div className="flex space-x-3">
+            <div className="space-y-3">
+              {/* Botón para previsualizar PDF */}
               <button
-                onClick={generateTicket}
-                className="flex-1 btn btn-secondary flex items-center justify-center space-x-2"
+                onClick={generateTicketPDF}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg flex items-center justify-center space-x-2 transition-colors"
               >
-                <Download className="w-4 h-4" />
-                <span>Descargar Ticket</span>
+                <FileText className="w-4 h-4" />
+                <span>Previsualizar Ticket PDF</span>
               </button>
+              
+              {/* Botón principal de completar cobro */}
               <button
                 onClick={handlePaymentComplete}
                 disabled={paymentMethod === 'cash' && (parseFloat(cashReceived) < total || !cashReceived)}
-                className="flex-1 btn btn-primary flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white py-4 px-6 rounded-lg flex items-center justify-center space-x-2 font-semibold text-lg transition-colors disabled:cursor-not-allowed"
               >
-                <Printer className="w-4 h-4" />
-                <span>Completar Cobro</span>
+                <Printer className="w-5 h-5" />
+                <span>Completar Cobro e Imprimir PDF</span>
               </button>
             </div>
           </div>

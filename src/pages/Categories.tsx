@@ -7,13 +7,20 @@ import {
   Tag,
   Save,
   X,
-  Palette
+  Palette,
+  Link as LinkIcon,
+  Power,
+  DollarSign
 } from 'lucide-react';
-import { useProducts, Category } from '../contexts/ProductContext';
+import { useProducts, Category, Product } from '../contexts/ProductContext';
+import { ProductCombination } from '../types/product';
+import { useConfig } from '../contexts/ConfigContext';
+import NumericKeypad from '../components/NumericKeypad';
 import toast from 'react-hot-toast';
 
 const Categories: React.FC = () => {
-  const { categories, addCategory, updateCategory, deleteCategory } = useProducts();
+  const { categories, addCategory, updateCategory, deleteCategory, products, updateProduct } = useProducts() as any;
+  const { getCurrencySymbol } = useConfig();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -24,6 +31,16 @@ const Categories: React.FC = () => {
     description: '',
     color: '#3B82F6'
   });
+
+  // Nueva sección: combinaciones por categoría
+  const [comboFromCategoryId, setComboFromCategoryId] = useState<string>('');
+  const [comboToCategoryId, setComboToCategoryId] = useState<string>('');
+  const [comboPrice, setComboPrice] = useState<number>(0);
+
+  // Estado para edición masiva de precios en el resumen
+  const [showKeypad, setShowKeypad] = useState(false);
+  const [keypadDestId, setKeypadDestId] = useState<string | null>(null);
+  const [keypadInitial, setKeypadInitial] = useState<number>(0);
 
   // Colores predefinidos para las categorías
   const predefinedColors = [
@@ -104,6 +121,153 @@ const Categories: React.FC = () => {
     }
   };
 
+  const applyCategoryCombinations = () => {
+    if (!comboFromCategoryId || !comboToCategoryId) {
+      toast.error('Selecciona categoría origen y destino');
+      return;
+    }
+    if (comboFromCategoryId === comboToCategoryId) {
+      toast.error('El origen y destino no pueden ser iguales');
+      return;
+    }
+
+    // Productos de la categoría origen
+    const sourceProducts: Product[] = (products as Product[]).filter(p => p.categoryId === comboFromCategoryId);
+    if (sourceProducts.length === 0) {
+      toast.error('La categoría origen no tiene productos');
+      return;
+    }
+
+    // Para cada producto origen, agregamos una combinación por categoría destino
+    sourceProducts.forEach(p => {
+      const existing = p.combinations || [];
+      // quitar previas hacia esa categoría (evitar duplicados)
+      const withoutDest = existing.filter(c => c.categoryId !== comboToCategoryId);
+      const newCombo: ProductCombination = {
+        id: `comb-catcat-${comboFromCategoryId}-${comboToCategoryId}-${p.id}`,
+        categoryId: comboToCategoryId,
+        additionalPrice: comboPrice,
+        isActive: true
+      };
+      updateProduct(p.id, { combinations: [...withoutDest, newCombo] });
+    });
+
+    toast.success(`Combinaciones aplicadas a ${sourceProducts.length} productos`);
+  };
+
+  // Acciones masivas desde el resumen
+  const bulkSetActiveForDest = (originCategoryId: string, destCategoryId: string, active: boolean) => {
+    const sourceProducts: Product[] = (products as Product[]).filter(p => p.categoryId === originCategoryId);
+    sourceProducts.forEach(p => {
+      const updated = (p.combinations || []).map(c => (
+        c.categoryId === destCategoryId ? { ...c, isActive: active } : c
+      ));
+      updateProduct(p.id, { combinations: updated });
+    });
+    toast.success(`${active ? 'Activadas' : 'Desactivadas'} combinaciones hacia la categoría seleccionada`);
+  };
+
+  const openBulkEditPrice = (destCategoryId: string, initial: number) => {
+    setKeypadDestId(destCategoryId);
+    setKeypadInitial(initial);
+    setShowKeypad(true);
+  };
+
+  const confirmBulkPrice = (value: number) => {
+    if (!editingCategory || !keypadDestId) {
+      setShowKeypad(false);
+      return;
+    }
+    const sourceProducts: Product[] = (products as Product[]).filter(p => p.categoryId === editingCategory.id);
+    sourceProducts.forEach(p => {
+      const updated = (p.combinations || []).map(c => (
+        c.categoryId === keypadDestId ? { ...c, additionalPrice: value } : c
+      ));
+      updateProduct(p.id, { combinations: updated });
+    });
+    setShowKeypad(false);
+    setKeypadDestId(null);
+    toast.success('Precio actualizado para todas las combinaciones seleccionadas');
+  };
+
+  const cancelBulkPrice = () => {
+    setShowKeypad(false);
+    setKeypadDestId(null);
+  };
+
+  // Resumen de combinaciones por categoría (para el modal de edición)
+  const renderCategoryCombinationSummary = (categoryId: string) => {
+    const sourceProducts: Product[] = (products as Product[]).filter(p => p.categoryId === categoryId);
+    const total = sourceProducts.length;
+    const destToPrices: Record<string, number[]> = {};
+    const destToActiveCount: Record<string, number> = {};
+
+    sourceProducts.forEach(p => {
+      (p.combinations || [])
+        .filter(c => !!c.categoryId)
+        .forEach(c => {
+          const key = c.categoryId as string;
+          if (!destToPrices[key]) destToPrices[key] = [];
+          destToPrices[key].push(c.additionalPrice);
+          destToActiveCount[key] = (destToActiveCount[key] || 0) + (c.isActive ? 1 : 0);
+        });
+    });
+
+    const destIds = Object.keys(destToPrices);
+    if (destIds.length === 0) {
+      return (
+        <div className="text-sm text-gray-500">Sin combinaciones por categoría</div>
+      );
+    }
+
+    const currency = getCurrencySymbol();
+
+    return (
+      <div className="space-y-2">
+        {destIds.map(destId => {
+          const prices = destToPrices[destId];
+          const dest = categories.find((c: Category) => c.id === destId);
+          const count = prices.length;
+          const activeCount = destToActiveCount[destId] || 0;
+          const allActive = activeCount === count;
+          const uniform = prices.every(p => p === prices[0]);
+          const min = Math.min(...prices);
+          const max = Math.max(...prices);
+          const initialForEdit = uniform ? prices[0] : min;
+          return (
+            <div key={destId} className="flex items-center justify-between p-2 border rounded-lg">
+              <div className="flex items-center gap-2">
+                <span className="text-xs px-2 py-1 rounded text-white" style={{ backgroundColor: dest?.color || '#64748b' }}>
+                  {dest?.name || 'Categoría'}
+                </span>
+                <span className="text-xs text-gray-500">{activeCount}/{count} activos</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">
+                  {uniform ? `${currency}${initialForEdit.toFixed(2)}` : `Varios (${currency}${min.toFixed(2)} - ${currency}${max.toFixed(2)})`}
+                </span>
+                <button
+                  onClick={() => openBulkEditPrice(destId, initialForEdit)}
+                  className="text-xs inline-flex items-center px-2 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                  title="Editar precio masivo"
+                >
+                  <DollarSign className="w-3 h-3 mr-1"/> Precio
+                </button>
+                <button
+                  onClick={() => bulkSetActiveForDest(categoryId, destId, !allActive)}
+                  className={`text-xs inline-flex items-center px-2 py-1 rounded ${allActive ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-green-50 text-green-600 hover:bg-green-100'}`}
+                  title={allActive ? 'Desactivar todas' : 'Activar todas'}
+                >
+                  <Power className="w-3 h-3 mr-1"/> {allActive ? 'Desactivar' : 'Activar'}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className="h-full bg-gray-50">
       <div className="p-6">
@@ -120,6 +284,53 @@ const Categories: React.FC = () => {
             <Plus className="w-5 h-5" />
             <span>Nueva Categoría</span>
           </button>
+        </div>
+
+        {/* Sección: Combinaciones masivas por categoría */}
+        <div className="bg-blue-50 rounded-lg border border-blue-200 p-4 mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-blue-800">Combinaciones por categorías</span>
+            <span className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded inline-flex items-center"><LinkIcon className="w-3 h-3 mr-1"/> Rápido</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={comboFromCategoryId}
+              onChange={(e) => setComboFromCategoryId(e.target.value)}
+              className="px-3 py-2 text-sm border border-blue-200 rounded-lg bg-white"
+            >
+              <option value="">Origen</option>
+              {categories.map((c: Category) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            <span className="text-sm text-blue-700">se combina con</span>
+            <select
+              value={comboToCategoryId}
+              onChange={(e) => setComboToCategoryId(e.target.value)}
+              className="px-3 py-2 text-sm border border-blue-200 rounded-lg bg-white"
+            >
+              <option value="">Destino</option>
+              {categories.map((c: Category) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            <input
+              type="number"
+              step="0.01"
+              value={comboPrice}
+              onChange={(e) => setComboPrice(parseFloat(e.target.value) || 0)}
+              className="w-28 px-3 py-2 text-sm border border-blue-200 rounded-lg"
+              placeholder="Precio ±"
+            />
+            <button
+              onClick={applyCategoryCombinations}
+              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
+            >
+              Aplicar a la categoría
+            </button>
+          </div>
+          <p className="text-xs text-blue-700 mt-1">El campo "Precio" sirve para añadir (o restar con valores negativos) el precio a la categoría destino.</p>
+          <p className="text-xs text-blue-600 mt-1">Aplica una combinación por categoría destino a todos los productos de la categoría origen.</p>
         </div>
 
         {/* Filtros */}
@@ -143,7 +354,7 @@ const Categories: React.FC = () => {
 
         {/* Lista de categorías */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredCategories.map((category) => (
+          {filteredCategories.map((category: Category) => (
             <div
               key={category.id}
               className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow"
@@ -316,6 +527,16 @@ const Categories: React.FC = () => {
                     </span>
                   </div>
                 </div>
+
+                {/* Resumen de combinaciones por categoría */}
+                {editingCategory && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Combinaciones de esta categoría
+                    </label>
+                    {renderCategoryCombinationSummary(editingCategory.id)}
+                  </div>
+                )}
               </div>
 
               {/* Botones */}
@@ -337,6 +558,16 @@ const Categories: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Teclado numérico para edición masiva */}
+      {showKeypad && keypadDestId && editingCategory && (
+        <NumericKeypad
+          value={keypadInitial}
+          onConfirm={confirmBulkPrice}
+          onCancel={cancelBulkPrice}
+          currencySymbol={getCurrencySymbol()}
+        />
       )}
     </div>
   );

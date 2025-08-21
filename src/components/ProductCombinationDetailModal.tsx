@@ -28,7 +28,6 @@ const ProductCombinationDetailModal: React.FC<ProductCombinationDetailModalProps
   const [hasChanges, setHasChanges] = useState(false);
   const [showNumericKeypad, setShowNumericKeypad] = useState(false);
   const [editingPriceFor, setEditingPriceFor] = useState<string | null>(null);
-  const [tempPrice, setTempPrice] = useState<string>('');
 
   // Inicializar precios cuando se abre el modal
   useEffect(() => {
@@ -52,24 +51,20 @@ const ProductCombinationDetailModal: React.FC<ProductCombinationDetailModalProps
 
   const openNumericKeypad = (productId: string) => {
     setEditingPriceFor(productId);
-    setTempPrice((productPrices[productId] || 0).toString());
     setShowNumericKeypad(true);
   };
 
-  const handleNumericKeypadConfirm = (value: string) => {
+  const handleNumericKeypadConfirm = (value: number) => {
     if (editingPriceFor) {
-      const numValue = parseFloat(value) || 0;
-      handlePriceChange(editingPriceFor, numValue);
+      handlePriceChange(editingPriceFor, value);
     }
     setShowNumericKeypad(false);
     setEditingPriceFor(null);
-    setTempPrice('');
   };
 
   const handleNumericKeypadCancel = () => {
     setShowNumericKeypad(false);
     setEditingPriceFor(null);
-    setTempPrice('');
   };
 
   const resetToBasePrice = () => {
@@ -156,8 +151,8 @@ const ProductCombinationDetailModal: React.FC<ProductCombinationDetailModalProps
               )}
             </div>
 
-                         {/* Products Grid */}
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-h-[70vh] overflow-y-auto">
+            {/* Products Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-h-[70vh] overflow-y-auto">
               {products.map((product) => (
                 <div key={product.id} className="border border-gray-200 rounded-lg p-4 hover:border-purple-300 transition-colors">
                   <div className="flex items-center justify-between mb-3">
@@ -181,29 +176,29 @@ const ProductCombinationDetailModal: React.FC<ProductCombinationDetailModalProps
                       <span>{currencySymbol}{product.price.toFixed(2)}</span>
                     </div>
                     
-                                         <div className="flex items-center space-x-2">
-                       <label className="text-sm font-medium text-gray-700 flex-1">
-                         Precio combinación:
-                       </label>
-                       <div className="relative">
-                         <button
-                           type="button"
-                           onClick={() => openNumericKeypad(product.id)}
-                           className={`w-24 px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-right cursor-pointer hover:bg-gray-50 transition-colors ${
-                             productPrices[product.id] > 0 
-                               ? 'border-green-300 bg-green-50 hover:bg-green-100' 
-                               : productPrices[product.id] < 0 
-                               ? 'border-red-300 bg-red-50 hover:bg-red-100'
-                               : 'border-gray-300 hover:bg-gray-50'
-                           }`}
-                         >
-                           {(productPrices[product.id] || 0).toFixed(2)}
-                         </button>
-                         <span className="absolute right-2 top-2 text-xs text-gray-400 pointer-events-none">
-                           €
-                         </span>
-                       </div>
-                     </div>
+                    <div className="flex items-center space-x-2">
+                      <label className="text-sm font-medium text-gray-700 flex-1">
+                        Precio combinación:
+                      </label>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => openNumericKeypad(product.id)}
+                          className={`w-24 px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-right cursor-pointer hover:bg-gray-50 transition-colors ${
+                            productPrices[product.id] > 0 
+                              ? 'border-green-300 bg-green-50 hover:bg-green-100' 
+                              : productPrices[product.id] < 0 
+                              ? 'border-red-300 bg-red-50 hover:bg-red-100'
+                              : 'border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          {(productPrices[product.id] || 0).toFixed(2)}
+                        </button>
+                        <span className="absolute right-2 top-2 text-xs text-gray-400 pointer-events-none">
+                          €
+                        </span>
+                      </div>
+                    </div>
                     
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-gray-500">Precio final:</span>
@@ -269,22 +264,21 @@ const ProductCombinationDetailModal: React.FC<ProductCombinationDetailModalProps
                 Guardar Cambios
               </button>
             </div>
-                     </div>
-         </div>
-       </div>
+          </div>
+        </div>
+      </div>
 
-       {/* Teclado numérico */}
-       {showNumericKeypad && (
-         <NumericKeypad
-           isOpen={showNumericKeypad}
-           onClose={handleNumericKeypadCancel}
-           onConfirm={handleNumericKeypadConfirm}
-           initialValue={tempPrice}
-           title={`Editar precio - ${editingPriceFor ? products.find(p => p.id === editingPriceFor)?.name : ''}`}
-         />
-       )}
-     </div>
-   );
- };
+      {/* Teclado numérico */}
+      {showNumericKeypad && editingPriceFor && (
+        <NumericKeypad
+          value={productPrices[editingPriceFor] || baseCombinationPrice}
+          onConfirm={handleNumericKeypadConfirm}
+          onCancel={handleNumericKeypadCancel}
+          currencySymbol={currencySymbol}
+        />
+      )}
+    </div>
+  );
+};
 
 export default ProductCombinationDetailModal;

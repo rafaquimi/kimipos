@@ -11,7 +11,8 @@ import {
   Calculator,
   MapPin,
   DollarSign,
-  Link2
+  Link2,
+  X
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import TableSelectorModal from '../components/Table/TableSelectorModal';
@@ -20,12 +21,14 @@ import MergeTablesModal from '../components/Table/MergeTablesModal';
 import NumericKeypad from '../components/NumericKeypad';
 import TariffSelectorModal from '../components/TariffSelectorModal';
 import CombinationSelectorModal from '../components/CombinationSelectorModal';
+import ModifiersModal from '../components/ModifiersModal';
 import { TableData } from '../components/Table/TableComponent';
 import { useTables } from '../contexts/TableContext';
 import { useConfig } from '../contexts/ConfigContext';
 import { useProducts } from '../contexts/ProductContext';
 import { calculateTotalBase, calculateTotalVAT, calculateTotalWithVAT, formatPrice } from '../utils/taxUtils';
 import { ProductTariff } from '../types/product';
+import { db } from '../database/db';
 
 interface OrderItem {
   productId: string;
@@ -34,6 +37,7 @@ interface OrderItem {
   unitPrice: number;
   totalPrice: number;
   status: string;
+  modifiers?: string[];
 }
 
 const Dashboard: React.FC = () => {
@@ -51,9 +55,29 @@ const Dashboard: React.FC = () => {
   const [selectedProductForTariff, setSelectedProductForTariff] = useState<any>(null);
   const [showCombinationSelector, setShowCombinationSelector] = useState(false);
   const [selectedProductForCombination, setSelectedProductForCombination] = useState<any>(null);
+  // Estado temporal para gestionar flujo combinación + tarifa
+  const [pendingCombination, setPendingCombination] = useState<{
+    baseProduct: any;
+    selectedProducts: Array<{product: any, quantity: number}>;
+    combinationNames: string;
+    additionalPrice: number;
+  } | null>(null);
+  // Modificadores
+  const [modifiersFor, setModifiersFor] = useState<string | null>(null);
+  const [showModifiersModal, setShowModifiersModal] = useState(false);
+  // Edición de tickets (desde Pedidos)
+  const [editOrderId, setEditOrderId] = useState<number | null>(null);
+  const [originalTotalForEdit, setOriginalTotalForEdit] = useState<number | null>(null);
+  const [tempDiffForPayment, setTempDiffForPayment] = useState<{ 
+    amount: number; 
+    isIncrease: boolean; 
+    newTotal?: number; 
+    newSubtotal?: number; 
+    newTax?: number; 
+  } | null>(null);
   
   const { addOrderToTable, getTableOrderItems, clearTableOrder, unmergeTables } = useTables();
-  const { getCurrencySymbol, getTaxRate } = useConfig();
+  const { getCurrencySymbol, getTaxRate, getModifiersForCategory } = useConfig();
   const { products, categories } = useProducts();
 
   // Solo productos activos
@@ -85,9 +109,104 @@ const Dashboard: React.FC = () => {
         quantity: 1,
         unitPrice: tariff.price,
         totalPrice: tariff.price,
-        status: 'pending'
+        status: 'pending',
+        modifiers: []
       };
       setCurrentOrder([...currentOrder, newItem]);
+    }
+  };
+
+  // Cargar ticket para edición si viene desde "Pedidos"
+  React.useEffect(() => {
+    const loadForEdit = async () => {
+      const editOrderId = localStorage.getItem('orderToEdit');
+      if (!editOrderId) return;
+      try {
+        const order = await db.orders.get(Number(editOrderId));
+        if (order) {
+          const items = order.items.map((it: any, idx: number) => ({
+            productId: String(it.productId ?? `edit-${idx}`),
+            productName: it.productName || `Producto ${idx+1}`,
+            quantity: it.quantity || 1,
+            unitPrice: it.unitPrice || 0,
+            totalPrice: it.totalPrice || 0,
+            status: 'pending' as const,
+            modifiers: [] as string[]
+          }));
+          setCurrentOrder(items);
+          setEditOrderId(order.id || null);
+          setOriginalTotalForEdit(order.total || 0);
+          toast.success(`Editando ticket #${order.id}`);
+        }
+      } catch (e) {
+        console.error('Error cargando ticket para edición:', e);
+      }
+    };
+    loadForEdit();
+  }, []);
+
+  const clearEditingState = () => {
+    // Limpiar estados de edición
+    setEditOrderId(null);
+    setOriginalTotalForEdit(null);
+    setTempDiffForPayment(null);
+    
+    // Limpiar pedido actual
+    setCurrentOrder([]);
+    
+    // Limpiar mesa seleccionada
+    setSelectedTable(null);
+    
+    // Limpiar localStorage
+    localStorage.removeItem('orderToEdit');
+    
+    toast.success('Dashboard limpiado, listo para nuevos pedidos');
+  };
+
+  const saveEditedOrder = async () => {
+    if (!editOrderId) return;
+    
+    const { subtotal, tax, total } = calculateTotal();
+    
+    // Solo mostrar modal de cobro si hay diferencia, SIN guardar aún
+    if (originalTotalForEdit !== null) {
+      const diff = parseFloat((total - originalTotalForEdit).toFixed(2));
+      if (Math.abs(diff) > 0.001) {
+        // Preparar datos para el modal de cobro de diferencia
+        setTempDiffForPayment({ 
+          amount: Math.abs(diff), 
+          isIncrease: diff > 0,
+          newTotal: total,
+          newSubtotal: subtotal,
+          newTax: tax
+        });
+        setIsPaymentModalOpen(true);
+        return; // No guardar hasta completar el cobro
+      }
+    }
+    
+    // Si no hay diferencia, guardar directamente y limpiar
+    try {
+      await db.orders.update(editOrderId, {
+        items: currentOrder.map(i => ({
+          productId: i.productId,
+          productName: i.productName,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+          totalPrice: i.totalPrice,
+          modifiers: i.modifiers || []
+        })),
+        subtotal,
+        tax,
+        total,
+        updatedAt: new Date()
+      });
+      
+      toast.success('Ticket actualizado sin cambios en el total');
+      clearEditingState();
+    } catch (e) {
+      console.error('Error guardando ticket editado:', e);
+      toast.error('No se pudo guardar el ticket');
     }
   };
 
@@ -108,9 +227,52 @@ const Dashboard: React.FC = () => {
   };
 
   const handleTariffSelect = (tariff: ProductTariff) => {
+    // Si hay una combinación pendiente para este producto, combinar ambas selecciones
+    if (pendingCombination && selectedProductForTariff && pendingCombination.baseProduct.id === selectedProductForTariff.id) {
+      const { baseProduct, combinationNames, additionalPrice } = pendingCombination;
+      const productName = `${baseProduct.name} con ${combinationNames} - ${tariff.name}`;
+      const totalPrice = tariff.price + additionalPrice;
+
+      const newItem: OrderItem = {
+        productId: baseProduct.id,
+        productName,
+        quantity: 1,
+        unitPrice: totalPrice,
+        totalPrice,
+        status: 'pending',
+        modifiers: []
+      };
+
+      setCurrentOrder([...currentOrder, newItem]);
+      setPendingCombination(null);
+      return;
+    }
+
+    // Caso normal: solo tarifa
     if (selectedProductForTariff) {
       addToOrder(selectedProductForTariff, tariff);
     }
+  };
+
+  // Modificadores: opciones por categoría (predeterminadas)
+  const getDefaultModifiersForProduct = (productId: string): string[] => {
+    const product = products.find(p => p.id === productId);
+    if (!product) return [];
+    return getModifiersForCategory(product.categoryId);
+  };
+
+  const openModifiersForItem = (productId: string) => {
+    setModifiersFor(productId);
+    setShowModifiersModal(true);
+  };
+
+  const saveModifiersForItem = (productId: string, modifiers: string[]) => {
+    setCurrentOrder(currentOrder.map(item => {
+      if (item.productId === productId) {
+        return { ...item, modifiers };
+      }
+      return item;
+    }));
   };
 
   const handleCombinationConfirm = (baseProduct: any, selectedProducts: Array<{product: any, quantity: number}>) => {
@@ -118,35 +280,46 @@ const Dashboard: React.FC = () => {
     const combinationNames = selectedProducts.map(sp => 
       `${sp.product.name}${sp.quantity > 1 ? ` (x${sp.quantity})` : ''}`
     ).join(' + ');
-    
-    const productName = `${baseProduct.name} con ${combinationNames}`;
-    
-    // Calcular el precio total
-    const basePrice = baseProduct.price;
-    const combinationPrice = selectedProducts.reduce((total, sp) => {
+
+    // Calcular solo el precio adicional por combinaciones
+    const additionalPrice = selectedProducts.reduce((total, sp) => {
       // Buscar primero combinación específica por producto
       const specificCombination = baseProduct.combinations.find((c: any) => c.productId === sp.product.id);
       if (specificCombination) {
         return total + (specificCombination.additionalPrice * sp.quantity);
       }
-      
+
       // Si no hay combinación específica, buscar por categoría
       const categoryCombination = baseProduct.combinations.find((c: any) => c.categoryId === sp.product.categoryId);
       return total + ((categoryCombination?.additionalPrice || 0) * sp.quantity);
     }, 0);
-    
-    const totalPrice = basePrice + combinationPrice;
-    
-    // Agregar al carrito
+
+    // Si hay varias tarifas, pedimos primero tarifa y luego cerramos el flujo
+    if (baseProduct.tariffs && baseProduct.tariffs.length > 1) {
+      setPendingCombination({
+        baseProduct,
+        selectedProducts,
+        combinationNames,
+        additionalPrice
+      });
+      setSelectedProductForTariff(baseProduct);
+      setShowTariffSelector(true);
+      return;
+    }
+
+    // Sin múltiples tarifas: usar precio base + adicional
+    const productName = `${baseProduct.name} con ${combinationNames}`;
+    const totalPrice = baseProduct.price + additionalPrice;
+
     const newItem: OrderItem = {
       productId: baseProduct.id,
-      productName: productName,
+      productName,
       quantity: 1,
       unitPrice: totalPrice,
-      totalPrice: totalPrice,
+      totalPrice,
       status: 'pending'
     };
-    
+
     setCurrentOrder([...currentOrder, newItem]);
   };
 
@@ -257,8 +430,31 @@ const Dashboard: React.FC = () => {
       return;
     }
 
-    const { total } = calculateTotal();
+    const { total, subtotal, tax } = calculateTotal();
     
+    // Guardar/actualizar pedido en DB si venimos desde "Editar desde Orders"
+    const editOrderId = localStorage.getItem('orderToEdit');
+    if (editOrderId) {
+      const existing = await db.orders.get(Number(editOrderId));
+      if (existing) {
+        await db.orders.update(existing.id!, {
+          items: currentOrder.map(i => ({
+            productId: 0,
+            productName: i.productName,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+            totalPrice: i.totalPrice,
+            status: 'delivered'
+          })),
+          subtotal,
+          tax,
+          total,
+          updatedAt: new Date()
+        });
+        localStorage.removeItem('orderToEdit');
+      }
+    }
+
     // Actualizar la mesa con el pedido
     addOrderToTable(selectedTable.id, total, currentOrder);
     
@@ -529,6 +725,13 @@ const Dashboard: React.FC = () => {
                           {getCurrencySymbol()}{formatPrice(item.unitPrice)} c/u (IVA incl.)
                           <DollarSign className="w-3 h-3 ml-1 opacity-50" />
                         </button>
+                        <button
+                          onClick={() => openModifiersForItem(item.productId)}
+                          className="text-xs text-gray-500 hover:text-blue-600 px-2 py-1 rounded hover:bg-blue-50"
+                          title="Añadir modificadores"
+                        >
+                          Modificadores
+                        </button>
                         {item.unitPrice !== products.find(p => p.id === item.productId)?.price && (
                           <button
                             onClick={() => resetToOriginalPrice(item.productId)}
@@ -539,6 +742,15 @@ const Dashboard: React.FC = () => {
                           </button>
                         )}
                       </div>
+                      {item.modifiers && item.modifiers.length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {item.modifiers.map((m, idx) => (
+                            <span key={idx} className="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-600 rounded">
+                              {m}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <button
                       onClick={() => removeFromOrder(item.productId)}
@@ -593,13 +805,32 @@ const Dashboard: React.FC = () => {
             </div>
 
             <div className="space-y-2">
-              <button
-                onClick={processOrder}
-                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-4 px-6 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
-              >
-                <Receipt className="w-5 h-5" />
-                <span>Procesar Pedido</span>
-              </button>
+              {editOrderId ? (
+                <div className="space-y-2">
+                  <button
+                    onClick={saveEditedOrder}
+                    className="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white py-4 px-6 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
+                  >
+                    <Receipt className="w-5 h-5" />
+                    <span>Guardar Cambios</span>
+                  </button>
+                  <button
+                    onClick={clearEditingState}
+                    className="w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white py-3 px-6 rounded-xl font-medium flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
+                  >
+                    <X className="w-4 h-4" />
+                    <span>Cancelar Edición</span>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={processOrder}
+                  className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-4 px-6 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
+                >
+                  <Receipt className="w-5 h-5" />
+                  <span>Procesar Pedido</span>
+                </button>
+              )}
               
               <div className="grid grid-cols-3 gap-2">
                 <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-2 rounded-xl font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-md text-sm">
@@ -668,27 +899,61 @@ const Dashboard: React.FC = () => {
        <PaymentModal
          isOpen={isPaymentModalOpen}
          onClose={() => setIsPaymentModalOpen(false)}
-         onPaymentComplete={() => {
-           if (selectedTable) {
-             clearTableOrder(selectedTable.id);
-             setSelectedTable(null);
-             setCurrentOrder([]);
-             
-             // Mensaje especial si era una mesa unida
-             const message = selectedTable.mergedWith 
-               ? `Mesas ${selectedTable.number} y ${selectedTable.mergedWith} cobradas y liberadas`
-               : `Mesa ${selectedTable.number} cobrada y liberada`;
-             
-             toast.success(message);
+         onPaymentComplete={async () => {
+           // Si estamos cobrando una diferencia de ticket editado, ahora SÍ guardamos
+           if (tempDiffForPayment && editOrderId) {
+             try {
+               await db.orders.update(editOrderId, {
+                 items: currentOrder.map(i => ({
+                   productId: i.productId,
+                   productName: i.productName,
+                   quantity: i.quantity,
+                   unitPrice: i.unitPrice,
+                   totalPrice: i.totalPrice,
+                   modifiers: i.modifiers || []
+                 })),
+                 subtotal: tempDiffForPayment.newSubtotal || 0,
+                 tax: tempDiffForPayment.newTax || 0,
+                 total: tempDiffForPayment.newTotal || 0,
+                 updatedAt: new Date()
+               });
+               
+               setOriginalTotalForEdit(tempDiffForPayment.newTotal || 0);
+               toast.success(tempDiffForPayment.isIncrease ? 'Diferencia cobrada y ticket actualizado' : 'Devolución procesada y ticket actualizado');
+               
+               // Limpiar el dashboard tras el cobro exitoso
+               clearEditingState();
+               
+             } catch (e) {
+               console.error('Error guardando ticket tras cobro:', e);
+               toast.error('Error al guardar el ticket actualizado');
+             }
            }
+           
+           setIsPaymentModalOpen(false);
+           setTempDiffForPayment(null);
          }}
-         orderItems={currentOrder}
+         orderItems={tempDiffForPayment ? [{
+           productId: 'diff',
+           productName: tempDiffForPayment.isIncrease ? 'Diferencia a cobrar (+)' : 'Devolución al cliente (-)',
+           quantity: 1,
+           unitPrice: tempDiffForPayment.isIncrease ? tempDiffForPayment.amount : -tempDiffForPayment.amount,
+           totalPrice: tempDiffForPayment.isIncrease ? tempDiffForPayment.amount : -tempDiffForPayment.amount,
+           status: 'pending'
+         }] : currentOrder}
          tableNumber={selectedTable?.number || ''}
          customerName={customerName}
-         subtotal={subtotal}
-         tax={tax}
-         total={total}
+         subtotal={tempDiffForPayment ? (tempDiffForPayment.isIncrease ? tempDiffForPayment.amount : -tempDiffForPayment.amount) : subtotal}
+         tax={tempDiffForPayment ? 0 : tax}
+         total={tempDiffForPayment ? (tempDiffForPayment.isIncrease ? tempDiffForPayment.amount : -tempDiffForPayment.amount) : total}
          mergedTableNumber={selectedTable?.mergedWith}
+         titleOverride={localStorage.getItem('orderToEdit') ? (tempDiffForPayment ? 'Cobro de diferencia' : 'Actualizar Ticket') : undefined}
+         skipDbSave={!!localStorage.getItem('orderToEdit')}
+         defaultPaymentMethod={'cash'}
+         originalOrderItems={tempDiffForPayment ? currentOrder : undefined}
+         originalSubtotal={tempDiffForPayment ? tempDiffForPayment.newSubtotal : undefined}
+         originalTax={tempDiffForPayment ? tempDiffForPayment.newTax : undefined}
+         originalTotal={tempDiffForPayment ? tempDiffForPayment.newTotal : undefined}
        />
 
        {/* Modal de unión de mesas */}
@@ -714,6 +979,7 @@ const Dashboard: React.FC = () => {
             onClose={() => {
               setShowTariffSelector(false);
               setSelectedProductForTariff(null);
+              setPendingCombination(null);
             }}
             productName={selectedProductForTariff.name}
             tariffs={selectedProductForTariff.tariffs || []}
@@ -735,6 +1001,17 @@ const Dashboard: React.FC = () => {
             availableProducts={activeProducts}
             onConfirmCombination={handleCombinationConfirm}
             currencySymbol={getCurrencySymbol()}
+          />
+        )}
+        {/* Modal de modificadores */}
+        {showModifiersModal && modifiersFor && (
+          <ModifiersModal
+            isOpen={showModifiersModal}
+            onClose={() => { setShowModifiersModal(false); setModifiersFor(null); }}
+            title="Seleccionar modificadores"
+            options={getDefaultModifiersForProduct(modifiersFor)}
+            selected={currentOrder.find(i => i.productId === modifiersFor)?.modifiers || []}
+            onSave={(selected) => saveModifiersForItem(modifiersFor, selected)}
           />
         )}
      </div>

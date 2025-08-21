@@ -27,7 +27,7 @@ export interface Product {
   syncStatus?: 'pending' | 'synced' | 'conflict';
 }
 
-export interface Table {
+export interface PosTable {
   id?: number;
   number: string;
   name: string;
@@ -127,7 +127,7 @@ export interface SyncLog {
 export class KimiPOSDatabase extends Dexie {
   categories!: Table<Category>;
   products!: Table<Product>;
-  tables!: Table<Table>;
+  posTables!: Table<PosTable>;
   salons!: Table<Salon>;
   orders!: Table<Order>;
   orderItems!: Table<OrderItem>;
@@ -141,7 +141,7 @@ export class KimiPOSDatabase extends Dexie {
     this.version(1).stores({
       categories: '++id, name, order, isActive, syncStatus',
       products: '++id, name, categoryId, isActive, price, syncStatus',
-      tables: '++id, number, salonId, status, currentOrderId, syncStatus',
+      posTables: '++id, number, salonId, status, currentOrderId, syncStatus',
       salons: '++id, name, isActive, syncStatus',
       orders: '++id, tableId, status, createdAt, syncStatus',
       orderItems: '++id, orderId, productId, status',
@@ -173,13 +173,13 @@ export class KimiPOSDatabase extends Dexie {
       modifications.syncStatus = 'pending';
     });
 
-    this.tables.hook('creating', function (primKey, obj, trans) {
+    this.posTables.hook('creating', function (primKey, obj, trans) {
       obj.createdAt = new Date();
       obj.updatedAt = new Date();
       obj.syncStatus = 'pending';
     });
 
-    this.tables.hook('updating', function (modifications, primKey, obj, trans) {
+    this.posTables.hook('updating', function (modifications, primKey, obj, trans) {
       modifications.updatedAt = new Date();
       modifications.syncStatus = 'pending';
     });

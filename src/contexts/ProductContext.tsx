@@ -26,10 +26,6 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Cargar desde localStorage
   useEffect(() => {
     try {
-      // TEMPORAL: Limpiar localStorage para forzar carga de nuevos productos
-      localStorage.removeItem('kimipos_products');
-      localStorage.removeItem('kimipos_categories');
-      
       const savedProducts = localStorage.getItem('kimipos_products');
       const savedCategories = localStorage.getItem('kimipos_categories');
       

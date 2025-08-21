@@ -8,6 +8,7 @@ import Categories from './pages/Categories';
 import Tables from './pages/Tables';
 import Orders from './pages/Orders';
 import ConfigurationPage from './pages/Configuration';
+import ModifiersPage from './pages/Modifiers';
 import { DatabaseProvider } from './contexts/DatabaseContext';
 import { TableProvider } from './contexts/TableContext';
 import { ConfigProvider } from './contexts/ConfigContext';
@@ -30,6 +31,7 @@ const App: React.FC = () => {
                 <Route path="/categories" element={<Categories />} />
                 <Route path="/tables" element={<Tables />} />
                 <Route path="/orders" element={<Orders />} />
+                <Route path="/modifiers" element={<ModifiersPage />} />
                 <Route path="/configuration" element={<ConfigurationPage />} />
                 <Route path="/configuration/salons" element={<ConfigurationPage />} />
               </Routes>

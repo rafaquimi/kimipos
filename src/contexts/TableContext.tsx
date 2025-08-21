@@ -9,6 +9,7 @@ interface OrderItem {
 	unitPrice: number;
 	totalPrice: number;
 	status: string;
+	modifiers?: string[];
 }
 
 export interface SalonData {
@@ -40,6 +41,7 @@ interface TableContextType {
 	addTable: (table: TableData) => void;
 	removeTable: (tableId: string) => boolean;
 	updateTablePosition: (tableId: string, x: number, y: number) => void;
+	updateTableRotation: (tableId: string, rotation: number) => void;
 	// Unión de mesas
 	mergeTables: (table1Id: string, table2Id: string) => void;
 	unmergeTables: (tableId: string) => void;
@@ -47,6 +49,7 @@ interface TableContextType {
 	// Decoración
 	addDecor: (item: DecorData) => void;
 	updateDecorPosition: (id: string, x: number, y: number) => void;
+	updateDecorRotation: (id: string, rotation: number) => void;
 }
 
 const TableContext = createContext<TableContextType | undefined>(undefined);
@@ -67,6 +70,7 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 					...s,
 					tables: (s.tables || []).map((t: any) => ({
 						...t,
+						rotation: t.rotation || 0,
 						occupiedSince: t.occupiedSince ? new Date(t.occupiedSince) : undefined
 					})),
 					// Migrar decoraciones antiguas (propiedad "type") a la nueva propiedad "kind"
@@ -75,6 +79,7 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 						kind: (d.kind || d.type) ?? 'plant',
 						x: d.x ?? 100,
 						y: d.y ?? 100,
+						rotation: d.rotation || 0,
 						width: d.width,
 						height: d.height,
 					}))
@@ -259,6 +264,16 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		})));
 	};
 
+	const updateTableRotation = (tableId: string, rotation: number) => {
+		// Validar que la rotación sea un número válido
+		const validRotation = isNaN(rotation) ? 0 : rotation;
+		
+		setSalons(prev => prev.map(s => s.id !== activeSalonId ? s : ({
+			...s,
+			tables: s.tables.map(t => t.id === tableId ? { ...t, rotation: validRotation } : t)
+		})));
+	};
+
 	const addDecor = (item: DecorData) => {
 		setSalons(prev => prev.map(s => s.id !== activeSalonId ? s : ({ ...s, decor: [...s.decor, item] })));
 	};
@@ -266,6 +281,16 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		setSalons(prev => prev.map(s => s.id !== activeSalonId ? s : ({
 			...s,
 			decor: s.decor.map(d => d.id === id ? { ...d, x, y } : d)
+		})));
+	};
+
+	const updateDecorRotation = (id: string, rotation: number) => {
+		// Validar que la rotación sea un número válido
+		const validRotation = isNaN(rotation) ? 0 : rotation;
+		
+		setSalons(prev => prev.map(s => s.id !== activeSalonId ? s : ({
+			...s,
+			decor: s.decor.map(d => d.id === id ? { ...d, rotation: validRotation } : d)
 		})));
 	};
 
@@ -406,11 +431,13 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		addTable,
 		removeTable,
 		updateTablePosition,
+		updateTableRotation,
 		mergeTables,
 		unmergeTables,
 		getTableMergeGroup,
 		addDecor,
-		updateDecorPosition
+		updateDecorPosition,
+		updateDecorRotation
 	};
 
 	return (

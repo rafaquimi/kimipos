@@ -8,7 +8,7 @@ import {
   Square,
   Circle
 } from 'lucide-react';
-import { db, Table, Salon } from '../database/db';
+import { db, PosTable as Table, Salon } from '../database/db';
 import toast from 'react-hot-toast';
 
 const Tables: React.FC = () => {
@@ -43,7 +43,7 @@ const Tables: React.FC = () => {
 
   const tables = useLiveQuery(() => {
     if (selectedSalon) {
-      return db.tables.where('salonId').equals(selectedSalon).toArray();
+      return db.posTables.where('salonId').equals(selectedSalon).toArray();
     }
     return [];
   }, [selectedSalon]);
@@ -85,10 +85,10 @@ const Tables: React.FC = () => {
       };
 
       if (editingTable) {
-        await db.tables.update(editingTable.id!, tableData);
+        await db.posTables.update(editingTable.id!, tableData);
         toast.success('Mesa actualizada exitosamente');
       } else {
-        await db.tables.add({
+        await db.posTables.add({
           ...tableData,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -140,7 +140,7 @@ const Tables: React.FC = () => {
 
     if (window.confirm(`¿Estás seguro de que quieres eliminar la mesa "${table.name}"?`)) {
       try {
-        await db.tables.delete(table.id!);
+        await db.posTables.delete(table.id!);
         toast.success('Mesa eliminada exitosamente');
       } catch (error) {
         console.error('Error deleting table:', error);
@@ -282,7 +282,7 @@ const Tables: React.FC = () => {
       const finalY = Math.max(0, Math.min(y, maxY));
 
       // Actualizar la posición en la base de datos
-      await db.tables.update(draggedTable.id!, {
+      await db.posTables.update(draggedTable.id!, {
         x: finalX,
         y: finalY,
         updatedAt: new Date(),

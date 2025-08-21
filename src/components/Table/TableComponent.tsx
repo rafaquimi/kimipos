@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Clock, Users } from 'lucide-react';
+import RotationHandle from '../RotationHandle';
 
 export interface TableData {
   id: string;
@@ -8,6 +9,7 @@ export interface TableData {
   status: 'available' | 'occupied' | 'reserved';
   x: number;
   y: number;
+  rotation?: number; // Ángulo de rotación en grados
   occupiedSince?: Date;
   capacity?: number;
   currentOrder?: {
@@ -27,6 +29,9 @@ interface TableComponentProps {
   onClick?: (table: TableData) => void;
   onDragStart?: (table: TableData) => void;
   onDragEnd?: (table: TableData, x: number, y: number) => void;
+  onRotationChange?: (table: TableData, rotation: number) => void;
+  onDelete?: () => void;
+  showDeleteButton?: boolean;
   isDraggable?: boolean;
   scale?: number;
 }
@@ -37,24 +42,30 @@ const TableComponent: React.FC<TableComponentProps> = ({
   onClick,
   onDragStart,
   onDragEnd,
+  onRotationChange,
+  onDelete,
+  showDeleteButton = false,
   isDraggable = false,
   scale = 1
 }) => {
   const [isDragging, setIsDragging] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [currentPosition, setCurrentPosition] = useState({ 
     x: isNaN(table.x) ? 100 : table.x, 
     y: isNaN(table.y) ? 100 : table.y 
   });
+  const [currentRotation, setCurrentRotation] = useState(table.rotation || 0);
   const tableRef = useRef<HTMLDivElement>(null);
 
-  // Actualizar posición cuando cambia la prop table
+  // Actualizar posición y rotación cuando cambia la prop table
   useEffect(() => {
     setCurrentPosition({ 
       x: isNaN(table.x) ? 100 : table.x, 
       y: isNaN(table.y) ? 100 : table.y 
     });
-  }, [table.x, table.y]);
+    setCurrentRotation(table.rotation || 0);
+  }, [table.x, table.y, table.rotation]);
 
   // Función para generar colores únicos basados en mergeGroup
   const getMergeGroupColor = (mergeGroup: string) => {
@@ -110,6 +121,11 @@ const TableComponent: React.FC<TableComponentProps> = ({
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!isDraggable) return;
+    
+    // No activar arrastre si se hizo clic en el manejador de rotación
+    const target = e.target as HTMLElement;
+    if (target.closest('.rotation-handle')) return;
+    
     e.preventDefault();
     e.stopPropagation();
     
@@ -161,6 +177,12 @@ const TableComponent: React.FC<TableComponentProps> = ({
 
   const size = 80 * scale;
 
+  // Manejar cambio de rotación
+  const handleRotationChange = (newRotation: number) => {
+    setCurrentRotation(newRotation);
+    onRotationChange?.(table, newRotation);
+  };
+
   useEffect(() => {
     if (isDragging) {
       document.addEventListener('mousemove', handleMouseMove);
@@ -185,16 +207,21 @@ const TableComponent: React.FC<TableComponentProps> = ({
         height: size,
         cursor: isDraggable ? (isDragging ? 'grabbing' : 'grab') : 'pointer',
         zIndex: isDragging ? 1000 : 1,
+        transform: `rotate(${currentRotation}deg)`,
+        transformOrigin: 'center'
       }}
       onClick={(e) => {
         e.stopPropagation();
         onClick?.(table);
       }}
       onMouseDown={handleMouseDown}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
     >
       {/* Mesa circular */}
       <div
         className={`w-full h-full rounded-full border-2 shadow-lg flex flex-col items-center justify-center relative ${getStatusColor()} hover:shadow-xl transition-shadow`}
+        style={{ pointerEvents: 'none' }}
       >
         {/* Número de mesa */}
         <div className="text-lg font-bold">
@@ -265,6 +292,21 @@ const TableComponent: React.FC<TableComponentProps> = ({
           }`}
         />
       </div>
+
+      {/* Manejador de rotación */}
+      {isDraggable && isHovered && !isDragging && onRotationChange && (
+        <RotationHandle
+          visible={true}
+          currentRotation={currentRotation}
+          onRotationChange={handleRotationChange}
+          elementRect={{
+            x: 0,
+            y: 0,
+            width: size,
+            height: size
+          }}
+        />
+      )}
     </div>
   );
 };
