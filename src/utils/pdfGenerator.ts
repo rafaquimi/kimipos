@@ -22,6 +22,12 @@ interface TicketData {
   paymentMethod: 'cash' | 'card';
   cashReceived?: string;
   currencySymbol: string;
+  // Información del cliente y saldo
+  selectedCustomer?: any;
+  useBalance?: boolean;
+  balanceAmount?: number;
+  remainingAmount?: number;
+  remainingPaymentMethod?: 'cash' | 'card';
 }
 
 export const generatePOSTicketPDF = (ticketData: TicketData): string => {
@@ -62,6 +68,37 @@ export const generatePOSTicketPDF = (ticketData: TicketData): string => {
     yPosition += 12;
     doc.text(`Mesa: ${ticketData.tableNumber}`, leftMargin, yPosition);
     yPosition += 15;
+
+    // Información del cliente si existe
+    if (ticketData.selectedCustomer) {
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.text('CLIENTE:', leftMargin, yPosition);
+      yPosition += 12;
+      
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      const customerName = `${ticketData.selectedCustomer.name} ${ticketData.selectedCustomer.lastName}`;
+      doc.text(customerName, leftMargin, yPosition);
+      yPosition += 12;
+      
+      if (ticketData.selectedCustomer.email) {
+        doc.text(`Email: ${ticketData.selectedCustomer.email}`, leftMargin, yPosition);
+        yPosition += 12;
+      }
+      
+      if (ticketData.selectedCustomer.phone) {
+        doc.text(`Tel: ${ticketData.selectedCustomer.phone}`, leftMargin, yPosition);
+        yPosition += 12;
+      }
+      
+      if (ticketData.selectedCustomer.cardCode) {
+        doc.text(`Tarjeta: ${ticketData.selectedCustomer.cardCode}`, leftMargin, yPosition);
+        yPosition += 12;
+      }
+      
+      yPosition += 5;
+    }
 
     // Línea separadora
     doc.line(leftMargin, yPosition, pageWidth - rightMargin, yPosition);
@@ -113,16 +150,60 @@ export const generatePOSTicketPDF = (ticketData: TicketData): string => {
     doc.text(totalText, pageWidth - rightMargin - totalWidth, yPosition);
     yPosition += 20;
 
+    // Detalles del pago con saldo si se usó
+    if (ticketData.useBalance && ticketData.balanceAmount && ticketData.balanceAmount > 0) {
+      // Línea separadora
+      doc.line(leftMargin, yPosition, pageWidth - rightMargin, yPosition);
+      yPosition += 10;
+      
+      // Sección de pago con saldo
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text('PAGO CON SALDO', leftMargin, yPosition);
+      yPosition += 15;
+      
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      
+      // Saldo usado
+      const balanceUsedText = `Saldo usado: ${ticketData.currencySymbol}${ticketData.balanceAmount.toFixed(2)}`;
+      const balanceUsedWidth = doc.getTextWidth(balanceUsedText);
+      doc.text(balanceUsedText, pageWidth - rightMargin - balanceUsedWidth, yPosition);
+      yPosition += 12;
+      
+      // Saldo restante
+      if (ticketData.selectedCustomer) {
+        const remainingBalance = ticketData.selectedCustomer.balance - ticketData.balanceAmount;
+        const remainingBalanceText = `Saldo restante: ${ticketData.currencySymbol}${remainingBalance.toFixed(2)}`;
+        const remainingBalanceWidth = doc.getTextWidth(remainingBalanceText);
+        doc.text(remainingBalanceText, pageWidth - rightMargin - remainingBalanceWidth, yPosition);
+        yPosition += 12;
+      }
+      
+      // Método para el resto si hay monto restante
+      if (ticketData.remainingAmount && ticketData.remainingAmount > 0) {
+        const remainingMethodText = ticketData.remainingPaymentMethod === 'cash' ? 'Efectivo' : 'Tarjeta';
+        const remainingText = `Resto pagado con: ${remainingMethodText}`;
+        const remainingWidth = doc.getTextWidth(remainingText);
+        doc.text(remainingText, pageWidth - rightMargin - remainingWidth, yPosition);
+        yPosition += 12;
+      }
+      
+      yPosition += 10;
+    }
+
     // Línea separadora
     doc.line(leftMargin, yPosition, pageWidth - rightMargin, yPosition);
     yPosition += 10;
 
-    // Método de pago
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    const paymentMethodText = ticketData.paymentMethod === 'cash' ? 'Efectivo' : 'Tarjeta';
-    doc.text(`Pago: ${paymentMethodText}`, leftMargin, yPosition);
-    yPosition += 20;
+    // Método de pago (solo si no se usó saldo o hay monto restante)
+    if (!ticketData.useBalance || (ticketData.remainingAmount && ticketData.remainingAmount > 0)) {
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      const paymentMethodText = ticketData.paymentMethod === 'cash' ? 'Efectivo' : 'Tarjeta';
+      doc.text(`Pago: ${paymentMethodText}`, leftMargin, yPosition);
+      yPosition += 20;
+    }
 
     // Pie de página
     doc.setFontSize(10);

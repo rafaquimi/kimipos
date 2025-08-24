@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Receipt, CreditCard, DollarSign, Printer, Download, FileText } from 'lucide-react';
 import { useConfig } from '../../contexts/ConfigContext';
+import { useCustomers } from '../../contexts/CustomerContext';
 import { db } from '../../database/db';
 import { calculateBasePrice, calculateVATAmount, formatPrice } from '../../utils/taxUtils';
 import { generatePOSTicketPDF, openPDFInNewWindow } from '../../utils/pdfGenerator';
@@ -32,6 +33,7 @@ interface PaymentModalProps {
   originalSubtotal?: number;
   originalTax?: number;
   originalTotal?: number;
+  selectedCustomer?: any; // Cliente seleccionado con saldo
 }
 
 const PaymentModal: React.FC<PaymentModalProps> = ({
@@ -51,11 +53,57 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   originalOrderItems,
   originalSubtotal,
   originalTax,
-  originalTotal
+  originalTotal,
+  selectedCustomer
 }) => {
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card'>(defaultPaymentMethod);
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'balance' | 'mixed'>(defaultPaymentMethod);
   const [cashReceived, setCashReceived] = useState('');
+  const [useBalance, setUseBalance] = useState(false);
+  const [balanceAmount, setBalanceAmount] = useState(0);
+  const [remainingAmount, setRemainingAmount] = useState(0);
+  const [remainingPaymentMethod, setRemainingPaymentMethod] = useState<'cash' | 'card'>('cash');
+  const [remainingCashReceived, setRemainingCashReceived] = useState('');
   const { getCurrencySymbol, getTaxRate, config } = useConfig();
+  const { refreshCustomers } = useCustomers();
+
+  // Lógica para saldo del cliente
+  const customerBalance = selectedCustomer?.balance || 0;
+  const hasCustomerBalance = customerBalance > 0;
+  
+
+  
+  // Calcular montos cuando se usa saldo
+  useEffect(() => {
+    if (useBalance && hasCustomerBalance) {
+      const balanceToUse = Math.min(customerBalance, total);
+      setBalanceAmount(balanceToUse);
+      const remaining = total - balanceToUse;
+      setRemainingAmount(remaining);
+      
+      if (remaining > 0) {
+        setPaymentMethod('mixed');
+      } else {
+        setPaymentMethod('balance');
+      }
+    } else {
+      setBalanceAmount(0);
+      setRemainingAmount(0);
+      setPaymentMethod(defaultPaymentMethod);
+    }
+  }, [useBalance, customerBalance, total, defaultPaymentMethod, hasCustomerBalance]);
+  
+  // Resetear estado cuando se abre el modal
+  useEffect(() => {
+    if (isOpen) {
+      setUseBalance(false);
+      setBalanceAmount(0);
+      setRemainingAmount(0);
+      setRemainingPaymentMethod('cash');
+      setRemainingCashReceived('');
+      setCashReceived('');
+      setPaymentMethod(defaultPaymentMethod);
+    }
+  }, [isOpen, defaultPaymentMethod]);
 
   if (!isOpen) return null;
 
@@ -65,6 +113,9 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   // Detectar si es una devolución (total negativo o producto de diferencia negativa)
   const isRefund = total < 0 || orderItems.some(item => item.productName.includes('(-)'));
   const isAdjustment = orderItems.some(item => item.productId === 'diff');
+  
+  // Calcular cambio para el pago restante
+  const remainingChange = parseFloat(remainingCashReceived) - remainingAmount;
 
   const generateTicketPDF = () => {
     try {
@@ -86,7 +137,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       });
       
       const ticketData = {
-        restaurantName: config.restaurant_name || 'Restaurante',
+        restaurantName: config.restaurantName || 'Restaurante',
         tableNumber,
         customerName,
         mergedTableNumber,
@@ -94,9 +145,15 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         subtotal: subtotalToShow,
         tax: taxToShow,
         total: totalToShow,
-        paymentMethod,
-        cashReceived: paymentMethod === 'cash' ? cashReceived : undefined,
-        currencySymbol
+        paymentMethod: paymentMethod === 'balance' ? 'card' : (paymentMethod === 'mixed' ? remainingPaymentMethod : paymentMethod),
+        cashReceived: (paymentMethod === 'cash' || (paymentMethod === 'mixed' && remainingPaymentMethod === 'cash')) ? (useBalance ? remainingCashReceived : cashReceived) : undefined,
+        currencySymbol,
+        // Información del cliente y saldo
+        selectedCustomer,
+        useBalance,
+        balanceAmount,
+        remainingAmount,
+        remainingPaymentMethod
       };
 
       console.log('Generando PDF con datos:', ticketData);
@@ -111,13 +168,32 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       
     } catch (error) {
       console.error('Error generando ticket PDF:', error);
-      alert(`Error al generar el ticket PDF: ${error.message}`);
+      alert(`Error al generar el ticket PDF: ${error instanceof Error ? error.message : 'Error desconocido'}`);
     }
   };
 
 
 
   const handlePaymentComplete = async () => {
+    
+    // Actualizar saldo del cliente si se usó
+    if (useBalance && selectedCustomer && balanceAmount > 0) {
+      try {
+        const newBalance = customerBalance - balanceAmount;
+        await db.customers.update(selectedCustomer.id, {
+          balance: newBalance,
+          updatedAt: new Date()
+        });
+        console.log(`Saldo actualizado para ${selectedCustomer.name}: ${customerBalance} -> ${newBalance}`);
+        
+        // Refrescar el contexto de clientes para actualizar la interfaz
+        await refreshCustomers();
+        console.log('Contexto de clientes refrescado');
+      } catch (e) {
+        console.error('Error actualizando saldo del cliente:', e);
+      }
+    }
+    
     // Generar PDF automáticamente al completar pago
     generateTicketPDF();
     if (!skipDbSave) {
@@ -200,6 +276,86 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               </div>
             </div>
 
+            {/* Información del cliente con saldo */}
+            {hasCustomerBalance && (
+              <div className="mb-6">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-lg font-semibold text-blue-800">Cliente con Saldo</h3>
+                    <div className="text-right">
+                      <div className="text-2xl font-bold text-blue-600">
+                        {currencySymbol}{customerBalance.toFixed(2)}
+                      </div>
+                      <div className="text-sm text-blue-600">Saldo disponible</div>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="checkbox"
+                        id="useBalance"
+                        checked={useBalance}
+                        onChange={(e) => setUseBalance(e.target.checked)}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <label htmlFor="useBalance" className="text-sm font-medium text-blue-800">
+                        Usar saldo del cliente
+                      </label>
+                    </div>
+                    
+                    {useBalance && (
+                      <div className="bg-white rounded-lg p-3 border border-blue-200">
+                        <div className="space-y-2">
+                          <div className="flex justify-between">
+                            <span className="text-sm text-gray-600">Total a pagar:</span>
+                            <span className="font-medium">{currencySymbol}{total.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm text-gray-600">Saldo a usar:</span>
+                            <span className="font-medium text-blue-600">{currencySymbol}{balanceAmount.toFixed(2)}</span>
+                          </div>
+                          {remainingAmount > 0 && (
+                            <>
+                              <div className="flex justify-between">
+                                <span className="text-sm text-gray-600">Restante a pagar:</span>
+                                <span className="font-medium text-orange-600">{currencySymbol}{remainingAmount.toFixed(2)}</span>
+                              </div>
+                              <div className="pt-2 border-t border-gray-200">
+                                <div className="text-sm text-gray-600 mb-2">Método para el resto:</div>
+                                <div className="flex space-x-2">
+                                  <button
+                                    onClick={() => setRemainingPaymentMethod('cash')}
+                                    className={`flex-1 py-2 px-3 rounded text-sm font-medium transition-colors ${
+                                      remainingPaymentMethod === 'cash'
+                                        ? 'bg-green-100 text-green-800 border border-green-300'
+                                        : 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200'
+                                    }`}
+                                  >
+                                    Efectivo
+                                  </button>
+                                  <button
+                                    onClick={() => setRemainingPaymentMethod('card')}
+                                    className={`flex-1 py-2 px-3 rounded text-sm font-medium transition-colors ${
+                                      remainingPaymentMethod === 'card'
+                                        ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                                        : 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200'
+                                    }`}
+                                  >
+                                    Tarjeta
+                                  </button>
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Totales */}
             <div className={`rounded-lg p-4 mb-6 ${isRefund ? 'bg-red-50 border-2 border-red-200' : 'bg-gray-50'}`}>
               <div className="space-y-2">
@@ -217,6 +373,20 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                     {isRefund && total < 0 ? '-' : ''}{currencySymbol}{formatPrice(Math.abs(total))}
                   </span>
                 </div>
+                {useBalance && hasCustomerBalance && (
+                  <div className="border-t pt-2 space-y-1">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-blue-600">Pagado con saldo:</span>
+                      <span className="text-blue-600 font-medium">-{currencySymbol}{balanceAmount.toFixed(2)}</span>
+                    </div>
+                    {remainingAmount > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-orange-600">Restante ({remainingPaymentMethod === 'cash' ? 'Efectivo' : 'Tarjeta'}):</span>
+                        <span className="text-orange-600 font-medium">{currencySymbol}{remainingAmount.toFixed(2)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
                 {isRefund && (
                   <div className="mt-3 p-3 bg-red-100 border border-red-300 rounded-lg">
                     <p className="text-red-800 text-sm font-medium">
@@ -227,55 +397,59 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               </div>
             </div>
 
-            {/* Método de pago */}
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold mb-3">Método de Pago</h3>
-              <div className="flex space-x-4">
-                <button
-                  onClick={() => setPaymentMethod('cash')}
-                  className={`flex-1 flex items-center justify-center space-x-2 p-3 rounded-lg border-2 transition-colors ${
-                    paymentMethod === 'cash'
-                      ? 'border-primary-500 bg-primary-50 text-primary-700'
-                      : 'border-gray-300 hover:border-gray-400'
-                  }`}
-                >
-                  <DollarSign className="w-5 h-5" />
-                  <span>Efectivo</span>
-                </button>
-                <button
-                  onClick={() => setPaymentMethod('card')}
-                  className={`flex-1 flex items-center justify-center space-x-2 p-3 rounded-lg border-2 transition-colors ${
-                    paymentMethod === 'card'
-                      ? 'border-primary-500 bg-primary-50 text-primary-700'
-                      : 'border-gray-300 hover:border-gray-400'
-                  }`}
-                >
-                  <CreditCard className="w-5 h-5" />
-                  <span>Tarjeta</span>
-                </button>
+            {/* Método de pago - solo mostrar si no se usa saldo o hay monto restante */}
+            {(!useBalance || remainingAmount > 0) && (
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold mb-3">
+                  {useBalance ? 'Método para el Resto' : 'Método de Pago'}
+                </h3>
+                <div className="flex space-x-4">
+                  <button
+                    onClick={() => useBalance ? setRemainingPaymentMethod('cash') : setPaymentMethod('cash')}
+                    className={`flex-1 flex items-center justify-center space-x-2 p-3 rounded-lg border-2 transition-colors ${
+                      (useBalance ? remainingPaymentMethod : paymentMethod) === 'cash'
+                        ? 'border-primary-500 bg-primary-50 text-primary-700'
+                        : 'border-gray-300 hover:border-gray-400'
+                    }`}
+                  >
+                    <DollarSign className="w-5 h-5" />
+                    <span>Efectivo</span>
+                  </button>
+                  <button
+                    onClick={() => useBalance ? setRemainingPaymentMethod('card') : setPaymentMethod('card')}
+                    className={`flex-1 flex items-center justify-center space-x-2 p-3 rounded-lg border-2 transition-colors ${
+                      (useBalance ? remainingPaymentMethod : paymentMethod) === 'card'
+                        ? 'border-primary-500 bg-primary-50 text-primary-700'
+                        : 'border-gray-300 hover:border-gray-400'
+                    }`}
+                  >
+                    <CreditCard className="w-5 h-5" />
+                    <span>Tarjeta</span>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Input para efectivo */}
-            {paymentMethod === 'cash' && (
+            {((!useBalance && paymentMethod === 'cash') || (useBalance && remainingPaymentMethod === 'cash' && remainingAmount > 0)) && (
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Cantidad Recibida
+                  {useBalance ? 'Cantidad Recibida (Resto)' : 'Cantidad Recibida'}
                 </label>
                 <input
                   type="number"
-                  value={cashReceived}
-                  onChange={(e) => setCashReceived(e.target.value)}
+                  value={useBalance ? remainingCashReceived : cashReceived}
+                  onChange={(e) => useBalance ? setRemainingCashReceived(e.target.value) : setCashReceived(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   placeholder="0.00"
                   step="0.01"
-                  min={total}
+                  min={useBalance ? remainingAmount : total}
                 />
-                {parseFloat(cashReceived) > 0 && (
+                {parseFloat(useBalance ? remainingCashReceived : cashReceived) > 0 && (
                   <div className="mt-2 text-sm">
                     <span className="text-gray-600">Cambio: </span>
-                    <span className={`font-semibold ${change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {currencySymbol}{change.toFixed(2)}
+                    <span className={`font-semibold ${(useBalance ? remainingChange : change) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {currencySymbol}{(useBalance ? remainingChange : change).toFixed(2)}
                     </span>
                   </div>
                 )}
@@ -296,11 +470,22 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               {/* Botón principal de completar cobro */}
               <button
                 onClick={handlePaymentComplete}
-                disabled={paymentMethod === 'cash' && (parseFloat(cashReceived) < total || !cashReceived)}
+                disabled={
+                  // Pago normal sin saldo: validar efectivo
+                  (!useBalance && paymentMethod === 'cash' && (parseFloat(cashReceived) < total || !cashReceived)) ||
+                  // Pago con saldo pero hay monto restante en efectivo: validar efectivo restante
+                  (useBalance && remainingAmount > 0 && remainingPaymentMethod === 'cash' && (parseFloat(remainingCashReceived) < remainingAmount || !remainingCashReceived))
+                }
                 className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white py-4 px-6 rounded-lg flex items-center justify-center space-x-2 font-semibold text-lg transition-colors disabled:cursor-not-allowed"
               >
+
                 <Printer className="w-5 h-5" />
-                <span>Completar Cobro e Imprimir PDF</span>
+                <span>
+                  {useBalance && remainingAmount === 0 
+                    ? 'Completar Cobro con Saldo e Imprimir PDF'
+                    : 'Completar Cobro e Imprimir PDF'
+                  }
+                </span>
               </button>
             </div>
           </div>

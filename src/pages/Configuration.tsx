@@ -1,22 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Settings, Building, Archive, Plus, Save, Trash2, Move, Flower, Coffee, SlidersHorizontal } from 'lucide-react';
+import { Settings, Building, Archive, Plus, Save, Trash2, Move, Flower, Coffee, SlidersHorizontal, Users, Search, Edit, CreditCard, Mail, Phone, MapPin } from 'lucide-react';
 import { useTables, SalonData } from '../contexts/TableContext';
 import { useConfig } from '../contexts/ConfigContext';
 import { useProducts } from '../contexts/ProductContext';
+import { useCustomers, Customer } from '../contexts/CustomerContext';
 import TableComponent from '../components/Table/TableComponent';
 import DecorItem from '../components/Decor/DecorItem';
+import CustomerModal from '../components/CustomerModal';
+import ConfirmationModal from '../components/ConfirmationModal';
 import toast from 'react-hot-toast';
 
 const ConfigurationPage: React.FC = () => {
   const [activeSection, setActiveSection] = useState('general');
   const location = useLocation();
+  
+  // Estados para gestión de clientes
+  const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
+  const [customerSearchTerm, setCustomerSearchTerm] = useState('');
+  const { customers, addCustomer, updateCustomer, deleteCustomer, searchCustomers } = useCustomers();
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [customerToDelete, setCustomerToDelete] = useState<any>(null);
 
   useEffect(() => {
-    if (location.pathname.includes('/configuration/salons')) {
+    if (location.pathname.includes('/configuration/salons') || location.pathname.includes('/tables')) {
       setActiveSection('salons');
-    } else if (location.pathname.includes('/configuration/modifiers')) {
+    } else if (location.pathname.includes('/configuration/modifiers') || location.pathname.includes('/modifiers')) {
       setActiveSection('modifiers');
+    } else if (location.pathname.includes('/customers')) {
+      setActiveSection('customers');
     } else {
       setActiveSection('general');
     }
@@ -52,22 +65,36 @@ const ConfigurationPage: React.FC = () => {
     toast.success('Configuración guardada exitosamente');
   };
 
-  const LeftMenu = () => (
-    <div className="w-64 border-r border-gray-200 bg-white h-full">
-      <div className="p-4 font-semibold text-gray-800">Configuración</div>
-      <nav className="space-y-1 px-2">
-        <button onClick={() => setActiveSection('general')} className={`w-full text-left flex items-center px-3 py-2 rounded-lg ${activeSection==='general' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'}`}>
-          <Settings className="w-4 h-4 mr-2" /> General
-        </button>
-        <button onClick={() => setActiveSection('modifiers')} className={`w-full text-left flex items-center px-3 py-2 rounded-lg ${activeSection==='modifiers' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'}`}>
-          <SlidersHorizontal className="w-4 h-4 mr-2" /> Modificadores
-        </button>
-        <button onClick={() => setActiveSection('salons')} className={`w-full text-left flex items-center px-3 py-2 rounded-lg ${activeSection==='salons' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'}`}>
-          <Building className="w-4 h-4 mr-2" /> Salones
-        </button>
-      </nav>
-    </div>
-  );
+  // Funciones para gestión de clientes
+  const handleSaveCustomer = async (customerData: any) => {
+    try {
+      if (customerData.id) {
+        // Actualizar cliente existente
+        await updateCustomer(customerData.id, customerData);
+      } else {
+        // Crear nuevo cliente
+        await addCustomer(customerData);
+      }
+    } catch (error) {
+      console.error('Error saving customer:', error);
+    }
+  };
+
+  const handleDeleteCustomer = async () => {
+    if (customerToDelete) {
+      try {
+        await deleteCustomer(customerToDelete.id);
+        setCustomerToDelete(null);
+        setShowConfirmModal(false);
+      } catch (error) {
+        console.error('Error deleting customer:', error);
+      }
+    }
+  };
+
+  const filteredCustomers = searchCustomers(customerSearchTerm);
+
+
 
   const renderGeneral = () => (
     <div className="space-y-6">
@@ -125,15 +152,7 @@ const ConfigurationPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Acceso rápido a modificadores */}
-      <div className="card p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Modificadores</h3>
-        <p className="text-sm text-gray-600 mb-4">Gestiona los modificadores globales y por categoría.</p>
-        <a href="#/configuration/modifiers" className="btn btn-primary inline-flex items-center space-x-2">
-          <SlidersHorizontal className="w-4 h-4" />
-          <span>Abrir gestión de modificadores</span>
-        </a>
-      </div>
+
     </div>
   );
 
@@ -192,6 +211,154 @@ const ConfigurationPage: React.FC = () => {
             Guardar Modificadores
           </button>
         </div>
+      </div>
+    </div>
+  );
+
+  const renderCustomers = () => (
+    <div className="space-y-6">
+      <div className="card p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Gestión de Clientes</h3>
+            <p className="text-sm text-gray-600 mt-1">Administra la información de tus clientes</p>
+          </div>
+          <button
+            onClick={() => {
+              setSelectedCustomer(null);
+              setIsCustomerModalOpen(true);
+            }}
+            className="btn btn-primary flex items-center space-x-2"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Nuevo Cliente</span>
+          </button>
+        </div>
+
+        {/* Barra de búsqueda */}
+        <div className="mb-6">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <input
+              type="text"
+              placeholder="Buscar por nombre, email, teléfono o código de tarjeta..."
+              value={customerSearchTerm}
+              onChange={(e) => setCustomerSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+        </div>
+
+        {/* Lista de clientes */}
+        {filteredCustomers.length === 0 ? (
+          <div className="text-center py-12">
+            <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <h4 className="text-lg font-medium text-gray-900 mb-2">No hay clientes registrados</h4>
+            <p className="text-gray-600 mb-4">Comienza agregando tu primer cliente</p>
+            <button
+              onClick={() => {
+                setSelectedCustomer(null);
+                setIsCustomerModalOpen(true);
+              }}
+              className="btn btn-primary inline-flex items-center space-x-2"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Agregar Cliente</span>
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="text-sm text-gray-600 mb-4">
+              {filteredCustomers.length} cliente{filteredCustomers.length !== 1 ? 's' : ''} encontrado{filteredCustomers.length !== 1 ? 's' : ''}
+              {customerSearchTerm && customers.length !== filteredCustomers.length && (
+                <span className="text-blue-600"> de {customers.length} total</span>
+              )}
+            </div>
+            
+            <div className="grid gap-4">
+              {filteredCustomers.map((customer) => (
+                <div key={customer.id} className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                          <Users className="w-5 h-5 text-blue-600" />
+                        </div>
+                        <div>
+                          <h4 className="font-medium text-gray-900">
+                            {customer.name} {customer.lastName}
+                          </h4>
+                          <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
+                            {customer.email && (
+                              <div className="flex items-center space-x-1">
+                                <Mail className="w-3 h-3" />
+                                <span>{customer.email}</span>
+                              </div>
+                            )}
+                            {customer.phone && (
+                              <div className="flex items-center space-x-1">
+                                <Phone className="w-3 h-3" />
+                                <span>{customer.phone}</span>
+                              </div>
+                            )}
+                            {customer.cardCode && (
+                              <div className="flex items-center space-x-1">
+                                <CreditCard className="w-3 h-3" />
+                                <span>{customer.cardCode}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center space-x-4">
+                      {/* Saldo */}
+                      <div className="text-right">
+                        <div className="text-sm text-gray-500">Saldo</div>
+                        <div className={`font-semibold ${customer.balance > 0 ? 'text-green-600' : 'text-gray-600'}`}>
+                          €{customer.balance.toFixed(2)}
+                        </div>
+                      </div>
+                      
+                      {/* Acciones */}
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => {
+                            setSelectedCustomer(customer);
+                            setIsCustomerModalOpen(true);
+                          }}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Editar cliente"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setCustomerToDelete(customer);
+                            setShowConfirmModal(true);
+                          }}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Eliminar cliente"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {customer.notes && (
+                    <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                      <div className="text-sm text-gray-600">
+                        <strong>Notas:</strong> {customer.notes}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -339,19 +506,38 @@ const ConfigurationPage: React.FC = () => {
   };
 
   return (
-    <div className="h-full bg-gray-50 flex">
-      <LeftMenu />
-      <div className="flex-1 h-full overflow-hidden">
+    <div className="h-full bg-gray-50">
+      <div className="h-full overflow-hidden">
         {activeSection === 'general' && (
           <div className="h-full overflow-y-auto p-6">{renderGeneral()}</div>
         )}
         {activeSection === 'modifiers' && (
           <div className="h-full overflow-y-auto p-6">{renderModifiers()}</div>
         )}
+        {activeSection === 'customers' && (
+          <div className="h-full overflow-y-auto p-6">{renderCustomers()}</div>
+        )}
         {activeSection === 'salons' && (
           <div className="h-full">{renderSalons()}</div>
         )}
       </div>
+
+      {/* Modales */}
+      <CustomerModal
+        isOpen={isCustomerModalOpen}
+        onClose={() => setIsCustomerModalOpen(false)}
+        customer={selectedCustomer}
+        onSave={handleSaveCustomer}
+      />
+
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        onClose={() => setShowConfirmModal(false)}
+        onConfirm={handleDeleteCustomer}
+        title="Eliminar Cliente"
+        message={`¿Estás seguro de que deseas eliminar al cliente "${customerToDelete?.name} ${customerToDelete?.lastName}"? Esta acción no se puede deshacer.`}
+        type="danger"
+      />
     </div>
   );
 };

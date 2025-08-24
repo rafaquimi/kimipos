@@ -27,6 +27,9 @@ import { TableData } from '../components/Table/TableComponent';
 import { useTables } from '../contexts/TableContext';
 import { useConfig } from '../contexts/ConfigContext';
 import { useProducts } from '../contexts/ProductContext';
+import { useCustomers, Customer } from '../contexts/CustomerContext';
+import CustomerSelector from '../components/CustomerSelector';
+import CustomerModal from '../components/CustomerModal';
 import { calculateTotalBase, calculateTotalVAT, calculateTotalWithVAT, formatPrice } from '../utils/taxUtils';
 import { ProductTariff } from '../types/product';
 import { db } from '../database/db';
@@ -45,7 +48,7 @@ const Dashboard: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentOrder, setCurrentOrder] = useState<OrderItem[]>([]);
-  const [customerName, setCustomerName] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [selectedTable, setSelectedTable] = useState<TableData | null>(null);
   const [isTableModalOpen, setIsTableModalOpen] = useState(false); // No abrir automáticamente al inicio
   const [isTicketWithoutTable, setIsTicketWithoutTable] = useState(false); // Para tickets sin mesa
@@ -75,6 +78,9 @@ const Dashboard: React.FC = () => {
     onConfirm: () => void;
     type: 'danger' | 'warning' | 'info';
   } | null>(null);
+  // Modal para recargar saldo
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [customerToEdit, setCustomerToEdit] = useState<Customer | null>(null);
   // Edición de tickets (desde Pedidos)
   const [editOrderId, setEditOrderId] = useState<number | null>(null);
   const [originalTotalForEdit, setOriginalTotalForEdit] = useState<number | null>(null);
@@ -89,6 +95,7 @@ const Dashboard: React.FC = () => {
   const { addOrderToTable, getTableOrderItems, clearTableOrder, tables, removeNamedAccount } = useTables();
   const { getCurrencySymbol, getTaxRate, getModifiersForCategory } = useConfig();
   const { products, categories } = useProducts();
+  const { customers, updateCustomer } = useCustomers();
 
   // Solo productos activos
   const activeProducts = products.filter(p => p.isActive);
@@ -431,13 +438,69 @@ const Dashboard: React.FC = () => {
 
   const clearOrder = () => {
     setCurrentOrder([]);
-    setCustomerName('');
+    setSelectedCustomer(null);
     // No limpiamos la mesa seleccionada para mantener el contexto
+    // Pero sí limpiamos el cliente asignado de la mesa
+    if (selectedTable) {
+      setSelectedTable({
+        ...selectedTable,
+        assignedCustomer: undefined,
+        temporaryName: undefined // También limpiar nombre temporal al limpiar el pedido
+      });
+    }
+  };
+
+  // Función para abrir modal de recarga de saldo
+  const handleRechargeBalance = () => {
+    if (selectedCustomer) {
+      setCustomerToEdit(selectedCustomer);
+      setShowCustomerModal(true);
+    }
+  };
+
+  // Función para manejar la actualización del cliente
+  const handleCustomerUpdate = async (updatedCustomer: Customer) => {
+    try {
+      await updateCustomer(updatedCustomer);
+      // Actualizar el cliente seleccionado con los nuevos datos
+      setSelectedCustomer(updatedCustomer);
+      toast.success(`Saldo de ${updatedCustomer.name} ${updatedCustomer.lastName} actualizado a ${getCurrencySymbol()}${updatedCustomer.balance.toFixed(2)}`);
+    } catch (error) {
+      toast.error('Error al actualizar el saldo del cliente');
+    }
   };
 
   const handleTableSelect = (table: TableData) => {
-    setSelectedTable(table);
+    // Si hay un cliente seleccionado, asignarlo a la mesa y eliminar nombre temporal
+    const tableWithCustomer = selectedCustomer ? {
+      ...table,
+      assignedCustomer: {
+        id: selectedCustomer.id,
+        name: selectedCustomer.name,
+        lastName: selectedCustomer.lastName,
+        email: selectedCustomer.email,
+        phone: selectedCustomer.phone
+      },
+      temporaryName: undefined // Eliminar nombre temporal cuando se asigna un cliente
+    } : table;
+
+    setSelectedTable(tableWithCustomer);
     setIsTicketWithoutTable(false); // Salir del modo ticket sin mesa
+    
+    // Si la mesa ya tiene un cliente asignado, seleccionarlo en el selector
+    if (table.assignedCustomer && !selectedCustomer) {
+      // Buscar el cliente en la lista de clientes
+      const customer = customers.find(c => c.id === table.assignedCustomer!.id);
+      if (customer) {
+        setSelectedCustomer(customer);
+        toast.success(`Cliente ${customer.name} ${customer.lastName} cargado de la mesa ${table.number}`);
+      }
+    }
+    
+    // Si hay un cliente seleccionado, mostrar mensaje
+    if (selectedCustomer) {
+      toast.success(`Cliente ${selectedCustomer.name} ${selectedCustomer.lastName} asignado a la mesa ${table.number}`);
+    }
     
     // Si la mesa está ocupada, cargar los pedidos existentes
     if (table.status === 'occupied') {
@@ -459,7 +522,7 @@ const Dashboard: React.FC = () => {
     setSelectedTable(null);
     setIsTicketWithoutTable(true);
     setCurrentOrder([]);
-    setCustomerName('');
+    setSelectedCustomer(null);
     setIsTableModalOpen(false);
     toast.success('Modo ticket sin mesa activado. Puedes agregar productos y cobrarlos directamente.');
   };
@@ -511,8 +574,8 @@ const Dashboard: React.FC = () => {
       }
     }
 
-    // Actualizar la mesa con el pedido
-    addOrderToTable(selectedTable.id, total, currentOrder);
+    // Actualizar la mesa con el pedido y el cliente asignado
+    addOrderToTable(selectedTable.id, total, currentOrder, selectedCustomer);
     
     // Mostrar mensaje de éxito
     if (selectedTable.id.startsWith('account-')) {
@@ -523,7 +586,7 @@ const Dashboard: React.FC = () => {
     
     // Limpiar todo y volver a la pantalla de mesas
     setCurrentOrder([]);
-    setCustomerName('');
+    setSelectedCustomer(null);
     setSelectedTable(null);
     setIsTableModalOpen(true);
   };
@@ -559,7 +622,7 @@ const Dashboard: React.FC = () => {
         
         // Limpiar el carrito local
         setCurrentOrder([]);
-        setCustomerName('');
+        setSelectedCustomer(null);
         
         // Deseleccionar la mesa y abrir modal de selección
         setSelectedTable(null);
@@ -583,7 +646,7 @@ const Dashboard: React.FC = () => {
         
         // Limpiar también el carrito local
         setCurrentOrder([]);
-        setCustomerName('');
+        setSelectedCustomer(null);
       }
     };
 
@@ -615,10 +678,10 @@ const Dashboard: React.FC = () => {
                 className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm transition-all duration-200 hover:shadow-md"
               />
             </div>
-            {customerName && (
+            {selectedCustomer && (
               <div className="flex items-center space-x-2 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 px-4 py-2 rounded-xl shadow-sm">
                 <User className="w-4 h-4 text-blue-600" />
-                <span className="text-sm font-medium text-blue-700">{customerName}</span>
+                <span className="text-sm font-medium text-blue-700">{selectedCustomer.name} {selectedCustomer.lastName}</span>
               </div>
             )}
           </div>
@@ -726,13 +789,31 @@ const Dashboard: React.FC = () => {
         <div className="p-6 border-b border-gray-200/50 bg-gradient-to-r from-blue-50 to-indigo-50">
           {/* Selección de mesa y cliente */}
           <div className="space-y-2">
-            <input
-              type="text"
-              placeholder="Nombre del cliente (opcional)"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white shadow-sm transition-all duration-200 hover:shadow-md"
+            <CustomerSelector
+              selectedCustomer={selectedCustomer}
+              onCustomerSelect={setSelectedCustomer}
+              placeholder="Seleccionar cliente (opcional)"
             />
+            
+            {/* Botón de recarga de saldo */}
+            {selectedCustomer && (
+              <div className="flex space-x-2">
+                <button
+                  onClick={handleRechargeBalance}
+                  className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white py-3 px-4 rounded-xl font-medium flex items-center justify-center space-x-2 transition-all duration-200 hover:shadow-lg hover:scale-105 text-sm"
+                >
+                  <DollarSign className="w-4 h-4" />
+                  <span>Recargar Saldo</span>
+                </button>
+                <button
+                  onClick={() => setSelectedCustomer(null)}
+                  className="px-4 py-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 text-gray-500 hover:text-red-500 hover:border-red-300 shadow-sm hover:shadow-md min-w-[48px] min-h-[48px] flex items-center justify-center text-lg font-bold"
+                  title="Quitar cliente"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
             
             {/* Botón para seleccionar mesa */}
             <div className="flex space-x-2">
@@ -763,7 +844,7 @@ const Dashboard: React.FC = () => {
                    onClick={() => {
                      setSelectedTable(null);
                      setCurrentOrder([]);
-                     setCustomerName('');
+                     setSelectedCustomer(null);
                      setIsTableModalOpen(true);
                    }}
                    className="px-4 py-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 text-gray-500 hover:text-red-500 hover:border-red-300 shadow-sm hover:shadow-md min-w-[48px] min-h-[48px] flex items-center justify-center text-lg font-bold"
@@ -1029,7 +1110,7 @@ const Dashboard: React.FC = () => {
                  
                  // Limpiar el carrito local
                  setCurrentOrder([]);
-                 setCustomerName('');
+                 setSelectedCustomer(null);
                  
                  // Deseleccionar completamente la mesa
                  setSelectedTable(null);
@@ -1048,7 +1129,7 @@ const Dashboard: React.FC = () => {
                } else if (isTicketWithoutTable) {
                  // Cobro de ticket sin mesa
                  setCurrentOrder([]);
-                 setCustomerName('');
+                 setSelectedCustomer(null);
                  setIsTicketWithoutTable(false);
                  
                  // Abrir modal de mesas para seleccionar nueva mesa
@@ -1070,7 +1151,7 @@ const Dashboard: React.FC = () => {
            status: 'pending'
          }] : currentOrder}
          tableNumber={selectedTable?.number || ''}
-         customerName={customerName}
+         customerName={selectedCustomer ? `${selectedCustomer.name} ${selectedCustomer.lastName}` : ''}
          subtotal={tempDiffForPayment ? (tempDiffForPayment.isIncrease ? tempDiffForPayment.amount : -tempDiffForPayment.amount) : subtotal}
          tax={tempDiffForPayment ? 0 : tax}
          total={tempDiffForPayment ? (tempDiffForPayment.isIncrease ? tempDiffForPayment.amount : -tempDiffForPayment.amount) : total}
@@ -1082,6 +1163,7 @@ const Dashboard: React.FC = () => {
          originalSubtotal={tempDiffForPayment ? tempDiffForPayment.newSubtotal : undefined}
          originalTax={tempDiffForPayment ? tempDiffForPayment.newTax : undefined}
          originalTotal={tempDiffForPayment ? tempDiffForPayment.newTotal : undefined}
+         selectedCustomer={selectedCustomer}
        />
 
        {/* Modal de unión de mesas */}
@@ -1151,9 +1233,21 @@ const Dashboard: React.FC = () => {
              onConfirm={confirmationData.onConfirm}
              title={confirmationData.title}
              message={confirmationData.message}
-             confirmText="Confirmar"
-             cancelText="Cancelar"
              type={confirmationData.type}
+           />
+         )}
+
+         {/* Modal de cliente para recargar saldo */}
+         {showCustomerModal && customerToEdit && (
+           <CustomerModal
+             isOpen={showCustomerModal}
+             onClose={() => {
+               setShowCustomerModal(false);
+               setCustomerToEdit(null);
+             }}
+             customer={customerToEdit}
+             onSave={handleCustomerUpdate}
+             title="Recargar Saldo del Cliente"
            />
          )}
       </div>

@@ -34,7 +34,7 @@ interface TableContextType {
 	renameSalon: (salonId: string, name: string) => void;
 	// Mesas y pedidos
 	updateTableStatus: (tableId: string, status: TableData['status'], orderData?: any) => void;
-	addOrderToTable: (tableId: string, orderTotal: number, orderItems?: OrderItem[]) => void;
+	addOrderToTable: (tableId: string, orderTotal: number, orderItems?: OrderItem[], assignedCustomer?: any) => void;
 	clearTableOrder: (tableId: string) => void;
 	getTableById: (tableId: string) => TableData | undefined;
 	getTableOrderItems: (tableId: string) => OrderItem[];
@@ -201,8 +201,8 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		})));
 	};
 
-	const addOrderToTable = (tableId: string, orderTotal: number, orderItems?: OrderItem[]) => {
-		console.log('Añadiendo pedido a mesa:', tableId, orderItems);
+	const addOrderToTable = (tableId: string, orderTotal: number, orderItems?: OrderItem[], assignedCustomer?: any) => {
+		console.log('Añadiendo pedido a mesa:', tableId, orderItems, assignedCustomer);
 		
 		setSalons(prev => prev.map(s => s.id !== activeSalonId ? s : ({
 			...s,
@@ -210,7 +210,9 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 				...t,
 				status: 'occupied',
 				occupiedSince: new Date(),
-				currentOrder: { id: `order-${Date.now()}`, total: orderTotal, itemCount: orderItems?.length || 1 }
+				currentOrder: { id: `order-${Date.now()}`, total: orderTotal, itemCount: orderItems?.length || 1 },
+				assignedCustomer: assignedCustomer || t.assignedCustomer, // Mantener cliente existente si no se proporciona uno nuevo
+				temporaryName: assignedCustomer ? undefined : t.temporaryName // Eliminar nombre temporal si se asigna un cliente
 			}) : t)
 		})));
 
@@ -248,6 +250,7 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 				occupiedSince: undefined,
 				currentOrder: undefined,
 				temporaryName: undefined, // Limpiar nombre temporal al cobrar
+				assignedCustomer: undefined, // Limpiar cliente asignado al cobrar
 				// Al cobrar, automáticamente desunir las mesas
 				mergedWith: undefined,
 				isMaster: undefined,

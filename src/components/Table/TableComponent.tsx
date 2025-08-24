@@ -22,6 +22,14 @@ export interface TableData {
   mergedWith?: string; // ID de la mesa con la que está unida
   mergeGroup?: string; // ID del grupo de unión para mesas múltiples
   isMaster?: boolean; // Si es la mesa principal en una unión
+  // Propiedades para cliente asignado
+  assignedCustomer?: {
+    id: string;
+    name: string;
+    lastName: string;
+    email?: string;
+    phone?: string;
+  };
 }
 
 interface TableComponentProps {
@@ -314,6 +322,13 @@ const TableComponent: React.FC<TableComponentProps> = ({
           </div>
         ) : null}
 
+        {/* Cliente asignado */}
+        {table.assignedCustomer && (
+          <div className="text-xs font-medium text-center bg-green-100 text-green-800 px-2 py-1 rounded mt-1">
+            👤 {table.assignedCustomer.name} {table.assignedCustomer.lastName}
+          </div>
+        )}
+
         {/* Etiqueta de unión de mesas */}
         {table.mergedWith && (
           <div className="absolute -top-2 -right-2 bg-blue-600 text-white text-xs px-2 py-1 rounded-full border-2 border-white shadow-lg">
@@ -333,15 +348,15 @@ const TableComponent: React.FC<TableComponentProps> = ({
           <>
             {/* Tiempo transcurrido - solo en mesa principal o mesas no unidas */}
             {table.occupiedSince && (!table.mergeGroup || table.isMaster) && (
-              <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-red-600 to-rose-600 text-white text-sm font-bold px-3 py-2 rounded-lg shadow-lg border-2 border-white flex items-center space-x-1">
-                <Clock className="w-4 h-4" />
+              <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-red-600 to-rose-600 text-white text-xs font-bold px-2 py-1 rounded-md shadow-md border border-white flex items-center space-x-1">
+                <Clock className="w-3 h-3" />
                 <span>{getTimeElapsed()}</span>
               </div>
             )}
             
             {/* Total del pedido - solo en mesa principal o mesas no unidas */}
             {table.currentOrder && (!table.mergeGroup || table.isMaster) && (
-              <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-sm font-bold px-3 py-2 rounded-lg shadow-lg border-2 border-white">
+              <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs font-bold px-2 py-1 rounded-md shadow-md border border-white">
                 €{table.currentOrder.total.toFixed(2)}
               </div>
             )}

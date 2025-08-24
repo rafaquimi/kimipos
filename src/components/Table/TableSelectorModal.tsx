@@ -47,7 +47,8 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
   const filteredTables = tables.filter(table => {
     const matchesSearch = !searchTerm || 
       table.number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      table.name?.toLowerCase().includes(searchTerm.toLowerCase());
+      table.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      table.temporaryName?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || table.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -64,6 +65,8 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
     }
     
     if (table.status === 'available' || table.status === 'occupied' || table.status === 'reserved') {
+      // Limpiar la búsqueda antes de seleccionar la mesa
+      setSearchTerm('');
       onSelectTable(table);
       onClose();
     }
@@ -182,21 +185,46 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
 
         {/* Modal fullscreen */}
         <div className="inline-block w-full h-screen max-w-none my-0 overflow-hidden text-left align-middle transition-all transform bg-white shadow-xl rounded-none">
-          {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-gray-200">
-            <div className="flex items-center space-x-3">
-              <MapPin className="w-6 h-6 text-primary-600" />
-              <h2 className="text-xl font-semibold text-gray-900">Seleccionar Mesa</h2>
-            </div>
-            {!forceOpen && (
-              <button onClick={handleCloseMainModal} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            )}
-          </div>
-
-          {/* Filtros */}
+          {/* Header compacto */}
           <div className="p-4 border-b border-gray-200 bg-gray-50">
+            {/* Título, botón centrado y botones en la misma línea */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center space-x-3">
+                <MapPin className="w-6 h-6 text-primary-600" />
+                <h2 className="text-xl font-semibold text-gray-900">Seleccionar Mesa</h2>
+              </div>
+              
+              {/* Botón Ticket sin Mesa centrado */}
+              {onTicketWithoutTable && (
+                <button
+                  onClick={onTicketWithoutTable}
+                  className="px-6 py-3 bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-700 hover:to-violet-700 text-white font-bold rounded-xl shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105 flex items-center space-x-2 text-base border-2 border-purple-400 ring-2 ring-purple-200"
+                >
+                  <DollarSign className="w-5 h-5" />
+                  <span>Ticket sin Mesa</span>
+                </button>
+              )}
+              
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={() => {
+                    onClose();
+                    navigate('/configuration');
+                  }}
+                  className="px-3 py-2 bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white font-medium rounded-lg shadow-md hover:shadow-lg transition-all duration-200 flex items-center space-x-2 text-sm"
+                  title="Configuración"
+                >
+                  <Settings className="w-4 h-4" />
+                  <span>Configuración</span>
+                </button>
+                
+                {!forceOpen && (
+                  <button onClick={handleCloseMainModal} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                    <X className="w-5 h-5" />
+                  </button>
+                )}
+              </div>
+            </div>
             {/* Salones - Botones verticales */}
             <div className="mb-4">
               <label className="block text-xs text-gray-500 mb-2 font-medium">SELECCIONAR SALÓN</label>
@@ -221,23 +249,8 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
               </div>
             </div>
 
-            {/* Botón de configuración */}
-            <div className="flex justify-end mb-4">
-              <button
-                onClick={() => {
-                  onClose(); // Cerrar el modal de selección
-                  navigate('/configuration'); // Navegar a configuración
-                }}
-                className="px-4 py-2 bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white font-medium rounded-lg shadow-md hover:shadow-lg transition-all duration-200 flex items-center space-x-2"
-                title="Configuración"
-              >
-                <Settings className="w-4 h-4" />
-                <span>Configuración</span>
-              </button>
-            </div>
-
             {/* Búsqueda y filtros */}
-            <div className="flex flex-col sm:flex-row gap-4 items-end">
+            <div className="flex flex-col sm:flex-row gap-3 items-end">
               {/* Búsqueda */}
               <div className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -264,23 +277,10 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
                 </select>
               </div>
             </div>
-            
-            {/* Botón Ticket sin Mesa */}
-            {onTicketWithoutTable && (
-              <div className="mt-4 flex justify-center">
-                <button
-                  onClick={onTicketWithoutTable}
-                  className="px-6 py-3 bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-700 hover:to-violet-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 flex items-center space-x-2"
-                >
-                  <Receipt className="w-5 h-5" />
-                  <span>Ticket sin Mesa</span>
-                </button>
-              </div>
-            )}
           </div>
 
           {/* Salón visual */}
-          <div className="p-4 h-[calc(100vh-140px)]">
+          <div className="p-4 h-[calc(100vh-120px)]">
             <div className="relative bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 h-full overflow-hidden">
               <div className="absolute inset-0 bg-gradient-to-br from-blue-50 to-gray-100">
                 <div className="salon-canvas relative w-full h-full">

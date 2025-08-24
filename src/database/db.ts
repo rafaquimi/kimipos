@@ -86,14 +86,15 @@ export interface OrderItem {
 }
 
 export interface Customer {
-  id?: number;
+  id?: string;
   name: string;
-  email?: string;
-  phone?: string;
-  address?: string;
-  notes?: string;
-  totalOrders: number;
-  totalSpent: number;
+  lastName: string;
+  email: string;
+  phone: string;
+  address: string;
+  cardCode: string;
+  balance: number;
+  notes: string;
   createdAt: Date;
   updatedAt: Date;
   syncStatus?: 'pending' | 'synced' | 'conflict';
@@ -167,6 +168,10 @@ export class KimiPOSDatabase extends Dexie {
       namedAccounts: '++id, name, salonId, status, syncStatus'
     });
 
+    this.version(3).stores({
+      customers: '++id, name, lastName, email, phone, cardCode, syncStatus'
+    });
+
     // Hooks para auto-timestamps y sync tracking
     this.categories.hook('creating', function (primKey, obj, trans) {
       obj.createdAt = new Date();
@@ -208,6 +213,17 @@ export class KimiPOSDatabase extends Dexie {
     });
 
     this.salons.hook('updating', function (modifications, primKey, obj, trans) {
+      modifications.updatedAt = new Date();
+      modifications.syncStatus = 'pending';
+    });
+
+    this.customers.hook('creating', function (primKey, obj, trans) {
+      obj.createdAt = new Date();
+      obj.updatedAt = new Date();
+      obj.syncStatus = 'pending';
+    });
+
+    this.customers.hook('updating', function (modifications, primKey, obj, trans) {
       modifications.updatedAt = new Date();
       modifications.syncStatus = 'pending';
     });
