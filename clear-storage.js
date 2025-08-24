@@ -11,3 +11,4 @@ console.log('Después de recargar, puedes eliminar este archivo.');
 // Mostrar confirmación
 alert('localStorage limpiado. Recarga la página para ver los nuevos productos.');
 
+

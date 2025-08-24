@@ -72,3 +72,4 @@ export const calculateTotalWithVAT = (items: Array<{ unitPrice: number; quantity
   }, 0);
 };
 
+

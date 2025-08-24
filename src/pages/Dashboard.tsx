@@ -702,7 +702,7 @@ const Dashboard: React.FC = () => {
                 }}
               >
                 <div className="text-center">
-                  <h3 className="font-semibold text-gray-900 text-base mb-3 line-clamp-2 leading-tight">
+                  <h3 className="font-semibold text-gray-900 text-lg mb-3 line-clamp-2 leading-tight">
                     {product.name}
                   </h3>
                   <p 
@@ -721,27 +721,11 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Panel derecho - Carrito y totales */}
-      <div className="w-96 bg-white/90 backdrop-blur-sm border-l border-gray-200/50 flex flex-col shadow-xl">
+              <div className="w-[32rem] bg-white/90 backdrop-blur-sm border-l border-gray-200/50 flex flex-col shadow-xl">
         {/* Header del carrito */}
         <div className="p-6 border-b border-gray-200/50 bg-gradient-to-r from-blue-50 to-indigo-50">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold bg-gradient-to-r from-blue-800 to-indigo-800 bg-clip-text text-transparent flex items-center">
-              <ShoppingCart className="w-5 h-5 mr-2 text-blue-600" />
-              Pedido Actual
-            </h2>
-            {currentOrder.length > 0 && (
-              <button
-                onClick={clearOrder}
-                className="p-3 text-red-600 hover:bg-red-100 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md min-w-[48px] min-h-[48px] flex items-center justify-center"
-                title="Limpiar pedido"
-              >
-                <Trash2 className="w-6 h-6" />
-              </button>
-            )}
-          </div>
-          
           {/* Selección de mesa y cliente */}
-          <div className="mt-3 space-y-2">
+          <div className="space-y-2">
             <input
               type="text"
               placeholder="Nombre del cliente (opcional)"
@@ -801,80 +785,87 @@ const Dashboard: React.FC = () => {
               <p className="text-sm">Selecciona productos para agregar</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {currentOrder.map((item) => (
-                <div key={item.productId} className="bg-gradient-to-r from-white to-gray-50 rounded-xl p-4 border border-gray-200/50 shadow-sm hover:shadow-md transition-all duration-200">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <h4 className="font-medium text-gray-900 text-sm">{item.productName}</h4>
-                      <div className="flex items-center space-x-1 mt-1">
-                        <button
-                          onClick={() => togglePriceEdit(item.productId)}
-                          className={`text-sm hover:underline cursor-pointer flex items-center ${
-                            item.unitPrice !== products.find(p => p.id === item.productId)?.price
-                              ? 'text-blue-600 font-medium'
-                              : 'text-gray-600'
-                          }`}
-                          title="Haz clic para editar el precio (IVA incluido)"
-                        >
-                          {getCurrencySymbol()}{formatPrice(item.unitPrice)} c/u (IVA incl.)
-                          <DollarSign className="w-3 h-3 ml-1 opacity-50" />
-                        </button>
-                        <button
-                          onClick={() => openModifiersForItem(item.productId)}
-                          className="text-xs text-gray-500 hover:text-blue-600 px-2 py-1 rounded hover:bg-blue-50"
-                          title="Añadir modificadores"
-                        >
-                          Modificadores
-                        </button>
-                        {item.unitPrice !== products.find(p => p.id === item.productId)?.price && (
-                          <button
-                            onClick={() => resetToOriginalPrice(item.productId)}
-                            className="text-xs text-gray-400 hover:text-blue-600 p-1 rounded hover:bg-blue-50"
-                            title="Restaurar precio original"
-                          >
-                            ↺
-                          </button>
-                        )}
-                      </div>
-                      {item.modifiers && item.modifiers.length > 0 && (
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {item.modifiers.map((m, idx) => (
-                            <span key={idx} className="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-600 rounded">
-                              {m}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                <div key={item.productId} className="bg-gradient-to-r from-white to-gray-50 rounded-lg p-3 border border-gray-200/50 shadow-sm hover:shadow-md transition-all duration-200">
+                  <div className="flex items-center gap-4">
+                    {/* Botón eliminar */}
                     <button
                       onClick={() => removeFromOrder(item.productId)}
-                      className="p-3 text-red-600 hover:bg-red-100 rounded-lg transition-all duration-200 hover:scale-110 min-w-[44px] min-h-[44px] flex items-center justify-center"
+                      className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-all duration-200 hover:scale-110 flex-shrink-0"
                     >
-                      <Trash2 className="w-5 h-5" />
+                      <Trash2 className="w-4 h-4" />
                     </button>
-                  </div>
-                  
-                  <div className="flex items-center justify-between mt-2">
-                    <div className="flex items-center space-x-3">
+                    
+                    {/* Nombre del producto */}
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-gray-900 text-lg leading-tight">{item.productName}</h4>
+                    </div>
+                    
+                    {/* Precio unitario */}
+                    <div className="flex-shrink-0">
                       <button
-                        onClick={() => updateQuantity(item.productId, -1)}
-                        className="p-3 rounded-lg bg-gray-200 hover:bg-blue-500 hover:text-white transition-all duration-200 hover:scale-110 min-w-[44px] min-h-[44px] flex items-center justify-center"
+                        onClick={() => togglePriceEdit(item.productId)}
+                        className={`text-base font-semibold hover:underline cursor-pointer flex items-center ${
+                          item.unitPrice !== products.find(p => p.id === item.productId)?.price
+                            ? 'text-blue-600'
+                            : 'text-gray-700'
+                        }`}
+                        title="Haz clic para editar el precio (IVA incluido)"
                       >
-                        <Minus className="w-5 h-5" />
-                      </button>
-                      <span className="w-12 text-center font-semibold text-gray-800 text-lg">{item.quantity}</span>
-                      <button
-                        onClick={() => updateQuantity(item.productId, 1)}
-                        className="p-3 rounded-lg bg-gray-200 hover:bg-blue-500 hover:text-white transition-all duration-200 hover:scale-110 min-w-[44px] min-h-[44px] flex items-center justify-center"
-                      >
-                        <Plus className="w-5 h-5" />
+                        {getCurrencySymbol()}{formatPrice(item.unitPrice)} c/u
+                        <DollarSign className="w-4 h-4 ml-1 opacity-50" />
                       </button>
                     </div>
-                    <span className="font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                      {getCurrencySymbol()}{item.totalPrice.toFixed(2)}
-                    </span>
+                    
+                    {/* Botón modificadores */}
+                    <div className="flex-shrink-0">
+                      <button
+                        onClick={() => openModifiersForItem(item.productId)}
+                        className="text-xs text-gray-500 hover:text-blue-600 px-2 py-1 rounded hover:bg-blue-50"
+                        title="Añadir modificadores"
+                      >
+                        Mods
+                      </button>
+                      {item.unitPrice !== products.find(p => p.id === item.productId)?.price && (
+                        <button
+                          onClick={() => resetToOriginalPrice(item.productId)}
+                          className="text-xs text-gray-400 hover:text-blue-600 p-1 rounded hover:bg-blue-50 ml-1"
+                          title="Restaurar precio original"
+                        >
+                          ↺
+                        </button>
+                      )}
+                    </div>
+                    
+                    {/* Controles de cantidad */}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => updateQuantity(item.productId, -1)}
+                        className="p-1 rounded bg-gray-200 hover:bg-blue-500 hover:text-white transition-all duration-200 hover:scale-110 min-w-[24px] min-h-[24px] flex items-center justify-center"
+                      >
+                        <Minus className="w-3 h-3" />
+                      </button>
+                      <span className="w-6 text-center font-semibold text-gray-800 text-sm">{item.quantity}</span>
+                      <button
+                        onClick={() => updateQuantity(item.productId, 1)}
+                        className="p-1 rounded bg-gray-200 hover:bg-blue-500 hover:text-white transition-all duration-200 hover:scale-110 min-w-[24px] min-h-[24px] flex items-center justify-center"
+                      >
+                        <Plus className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
+                  
+                  {/* Modificadores en línea separada si existen */}
+                  {item.modifiers && item.modifiers.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {item.modifiers.map((m, idx) => (
+                        <span key={idx} className="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-600 rounded">
+                          {m}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -925,13 +916,15 @@ const Dashboard: React.FC = () => {
                   </button>
                 </div>
               ) : (
-                <button
-                  onClick={processOrder}
-                  className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-4 px-6 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
-                >
-                  <Receipt className="w-5 h-5" />
-                  <span>Procesar Pedido</span>
-                </button>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={processOrder}
+                    className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-3 px-4 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 text-sm"
+                  >
+                    <Receipt className="w-4 h-4" />
+                    <span>Procesar</span>
+                  </button>
+                </div>
               )}
               
                                              <div className="grid grid-cols-3 gap-2">
@@ -956,30 +949,29 @@ const Dashboard: React.FC = () => {
                
                
                
-                                            {/* Botón para cobrar mesa si está ocupada o ticket sin mesa */}
+                                            {/* Botones principales - Cobrar y Vaciar */}
                {(selectedTable && selectedTable.status === 'occupied') || isTicketWithoutTable ? (
-                 <>
+                 <div className="grid grid-cols-2 gap-3">
+                   {/* Botón Cobrar - Destacado */}
                    <button
                      onClick={() => setIsPaymentModalOpen(true)}
-                     className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white py-4 px-6 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
+                     className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white py-3 px-4 rounded-xl font-bold flex items-center justify-center space-x-2 shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105 text-base border-2 border-green-400 ring-2 ring-green-200 animate-pulse"
                    >
                      <DollarSign className="w-5 h-5" />
-                     <span>{isTicketWithoutTable ? 'Cobrar Ticket' : (selectedTable?.id.startsWith('account-') ? 'Cobrar Cuenta' : 'Cobrar Mesa')}</span>
+                     <span>Cobrar</span>
                    </button>
                    
-                                       {/* Botón para vaciar completamente el ticket de la mesa */}
-                    {selectedTable && (
-                      <button
-                        onClick={clearTableCompleteOrder}
-                        className="w-full bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white py-4 px-6 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                        <span>{selectedTable.id.startsWith('account-') ? 'Eliminar Cuenta' : 'Vaciar Ticket Mesa'}</span>
-                      </button>
-                    )}
-
-                   
-                 </>
+                   {/* Botón Vaciar */}
+                   {selectedTable && (
+                     <button
+                       onClick={clearTableCompleteOrder}
+                       className="bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white py-3 px-4 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 text-sm"
+                     >
+                       <Trash2 className="w-4 h-4" />
+                       <span>Vaciar</span>
+                     </button>
+                   )}
+                 </div>
                ) : null}
             </div>
           </div>
