@@ -15,6 +15,7 @@ import { TableProvider } from './contexts/TableContext';
 import { ConfigProvider } from './contexts/ConfigContext';
 import { ProductProvider } from './contexts/ProductContext';
 import { CustomerProvider } from './contexts/CustomerContext';
+import { BalanceIncentiveProvider } from './contexts/BalanceIncentiveContext';
 import { OnScreenKeyboardProvider } from './contexts/OnScreenKeyboardContext';
 import OnScreenKeyboard from './components/OnScreenKeyboard/OnScreenKeyboard';
 
@@ -54,7 +55,8 @@ const App: React.FC = () => {
     <DatabaseProvider>
       <ConfigProvider>
         <ProductProvider>
-          <CustomerProvider>
+                  <CustomerProvider>
+          <BalanceIncentiveProvider>
             <TableProvider>
               <OnScreenKeyboardProvider>
               <HashRouter>
@@ -69,6 +71,7 @@ const App: React.FC = () => {
                     <Route path="/configuration" element={<ConfigurationPage />} />
                     <Route path="/configuration/salons" element={<ConfigurationPage />} />
                     <Route path="/customers" element={<ConfigurationPage />} />
+            <Route path="/configuration/incentives" element={<ConfigurationPage />} />
                     <Route path="/reports" element={<ConfigurationPage />} />
                     <Route path="/invoices" element={<ConfigurationPage />} />
                   </Routes>
@@ -96,8 +99,9 @@ const App: React.FC = () => {
                 </Layout>
               </HashRouter>
             </OnScreenKeyboardProvider>
-          </TableProvider>
-        </CustomerProvider>
+                      </TableProvider>
+          </BalanceIncentiveProvider>
+          </CustomerProvider>
       </ProductProvider>
     </ConfigProvider>
   </DatabaseProvider>

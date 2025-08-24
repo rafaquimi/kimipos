@@ -102,6 +102,21 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       setRemainingCashReceived('');
       setCashReceived('');
       setPaymentMethod(defaultPaymentMethod);
+      
+      // Verificar si es una recarga de saldo
+      const rechargeData = localStorage.getItem('rechargeData');
+      if (rechargeData) {
+        try {
+          const data = JSON.parse(rechargeData);
+          // Si es una recarga, no permitir usar saldo
+          if (data.customer && data.amount) {
+            // Es una recarga, no usar saldo
+            setUseBalance(false);
+          }
+        } catch (error) {
+          console.error('Error parsing recharge data:', error);
+        }
+      }
     }
   }, [isOpen, defaultPaymentMethod]);
 
@@ -136,6 +151,16 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         paymentMethod
       });
       
+      // Determinar el tipo de documento
+      const rechargeData = localStorage.getItem('rechargeData');
+      let documentType: 'ticket' | 'recharge' | 'balance_payment' = 'ticket';
+      
+      if (rechargeData) {
+        documentType = 'recharge';
+      } else if (useBalance && balanceAmount > 0) {
+        documentType = 'balance_payment';
+      }
+      
       const ticketData = {
         restaurantName: config.restaurantName || 'Restaurante',
         tableNumber,
@@ -153,7 +178,9 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         useBalance,
         balanceAmount,
         remainingAmount,
-        remainingPaymentMethod
+        remainingPaymentMethod,
+        // Tipo de documento
+        documentType
       };
 
       console.log('Generando PDF con datos:', ticketData);
@@ -176,26 +203,85 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
   const handlePaymentComplete = async () => {
     
-    // Actualizar saldo del cliente si se usó
-    if (useBalance && selectedCustomer && balanceAmount > 0) {
+    // Verificar si es una recarga de saldo
+    const rechargeData = localStorage.getItem('rechargeData');
+    if (rechargeData) {
       try {
-        const newBalance = customerBalance - balanceAmount;
-        await db.customers.update(selectedCustomer.id, {
-          balance: newBalance,
-          updatedAt: new Date()
-        });
-        console.log(`Saldo actualizado para ${selectedCustomer.name}: ${customerBalance} -> ${newBalance}`);
-        
-        // Refrescar el contexto de clientes para actualizar la interfaz
-        await refreshCustomers();
-        console.log('Contexto de clientes refrescado');
-      } catch (e) {
-        console.error('Error actualizando saldo del cliente:', e);
+        const data = JSON.parse(rechargeData);
+        if (data.customer && data.amount) {
+          // Es una recarga, actualizar saldo del cliente
+          const newBalance = data.customer.balance + data.amount + data.bonus;
+          await db.customers.update(data.customer.id, {
+            balance: newBalance,
+            updatedAt: new Date()
+          });
+          
+          // Refrescar el contexto de clientes
+          await refreshCustomers();
+          
+          // Limpiar datos de recarga
+          localStorage.removeItem('rechargeData');
+          
+          console.log(`Recarga completada para ${data.customer.name}: ${data.customer.balance} -> ${newBalance}`);
+        }
+      } catch (error) {
+        console.error('Error procesando recarga:', error);
+      }
+    } else {
+      // Actualizar saldo del cliente si se usó para pagar
+      if (useBalance && selectedCustomer && balanceAmount > 0) {
+        try {
+          const newBalance = customerBalance - balanceAmount;
+          await db.customers.update(selectedCustomer.id, {
+            balance: newBalance,
+            updatedAt: new Date()
+          });
+          console.log(`Saldo actualizado para ${selectedCustomer.name}: ${customerBalance} -> ${newBalance}`);
+          
+          // Refrescar el contexto de clientes para actualizar la interfaz
+          await refreshCustomers();
+          console.log('Contexto de clientes refrescado');
+        } catch (e) {
+          console.error('Error actualizando saldo del cliente:', e);
+        }
       }
     }
     
     // Generar PDF automáticamente al completar pago
     generateTicketPDF();
+    
+    // Si hay pago mixto (saldo + efectivo/tarjeta), generar ticket separado para el resto
+    if (useBalance && remainingAmount > 0) {
+      try {
+        // Generar ticket separado para la parte pagada con efectivo/tarjeta
+        const remainingTicketData = {
+          orderItems: orderItems,
+          tableNumber: tableNumber,
+          customerName: customerName,
+          subtotal: subtotal,
+          tax: tax,
+          total: remainingAmount, // Solo el monto restante
+          paymentMethod: remainingPaymentMethod,
+          cashReceived: remainingCashReceived ? remainingCashReceived : remainingAmount.toString(),
+          mergedTableNumber: mergedTableNumber,
+          selectedCustomer: selectedCustomer,
+          useBalance: false, // No usar saldo en este ticket
+          balanceAmount: 0,
+          remainingAmount: 0,
+          remainingPaymentMethod: remainingPaymentMethod,
+          restaurantName: config.restaurantName,
+          currencySymbol: getCurrencySymbol(),
+          documentType: 'ticket' as const // Ticket fiscal para el resto
+        };
+        
+        // Generar PDF para el ticket del resto
+        await generatePOSTicketPDF(remainingTicketData);
+        console.log('Ticket separado generado para el resto pagado con efectivo/tarjeta');
+      } catch (error) {
+        console.error('Error generando ticket separado:', error);
+      }
+    }
+    
     if (!skipDbSave) {
       try {
         // Guardar ticket cobrado en Dexie como "paid"

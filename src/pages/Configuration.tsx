@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Settings, Building, Archive, Plus, Save, Trash2, Move, Flower, Coffee, SlidersHorizontal, Users, Search, Edit, CreditCard, Mail, Phone, MapPin } from 'lucide-react';
+import { Settings, Building, Archive, Plus, Save, Trash2, Move, Flower, Coffee, SlidersHorizontal, Users, Search, Edit, CreditCard, Mail, Phone, MapPin, Gift } from 'lucide-react';
 import { useTables, SalonData } from '../contexts/TableContext';
 import { useConfig } from '../contexts/ConfigContext';
 import { useProducts } from '../contexts/ProductContext';
 import { useCustomers, Customer } from '../contexts/CustomerContext';
+import { useBalanceIncentives } from '../contexts/BalanceIncentiveContext';
+import { BalanceIncentive } from '../database/db';
 import TableComponent from '../components/Table/TableComponent';
 import DecorItem from '../components/Decor/DecorItem';
 import CustomerModal from '../components/CustomerModal';
 import ConfirmationModal from '../components/ConfirmationModal';
+import BalanceIncentiveModal from '../components/BalanceIncentiveModal';
 import toast from 'react-hot-toast';
 
 const ConfigurationPage: React.FC = () => {
@@ -23,6 +26,11 @@ const ConfigurationPage: React.FC = () => {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState<any>(null);
 
+  // Estados para gestión de incentivos de saldo
+  const [isIncentiveModalOpen, setIsIncentiveModalOpen] = useState(false);
+  const [selectedIncentive, setSelectedIncentive] = useState<BalanceIncentive | null>(null);
+  const { allIncentives, addIncentive, updateIncentive, deleteIncentive } = useBalanceIncentives();
+
   useEffect(() => {
     if (location.pathname.includes('/configuration/salons') || location.pathname.includes('/tables')) {
       setActiveSection('salons');
@@ -30,6 +38,8 @@ const ConfigurationPage: React.FC = () => {
       setActiveSection('modifiers');
     } else if (location.pathname.includes('/customers')) {
       setActiveSection('customers');
+    } else if (location.pathname.includes('/configuration/incentives')) {
+      setActiveSection('incentives');
     } else {
       setActiveSection('general');
     }
@@ -93,6 +103,39 @@ const ConfigurationPage: React.FC = () => {
   };
 
   const filteredCustomers = searchCustomers(customerSearchTerm);
+
+  // Funciones para gestión de incentivos de saldo
+  const handleSaveIncentive = async (incentiveData: Omit<BalanceIncentive, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus'>) => {
+    try {
+      if (selectedIncentive) {
+        // Actualizar incentivo existente
+        await updateIncentive(selectedIncentive.id!, incentiveData);
+      } else {
+        // Crear nuevo incentivo
+        await addIncentive(incentiveData);
+      }
+    } catch (error) {
+      console.error('Error saving incentive:', error);
+    }
+  };
+
+  const handleEditIncentive = (incentive: BalanceIncentive) => {
+    setSelectedIncentive(incentive);
+    setIsIncentiveModalOpen(true);
+  };
+
+  const handleDeleteIncentive = async (incentive: BalanceIncentive) => {
+    try {
+      await deleteIncentive(incentive.id!);
+    } catch (error) {
+      console.error('Error deleting incentive:', error);
+    }
+  };
+
+  const handleAddIncentive = () => {
+    setSelectedIncentive(null);
+    setIsIncentiveModalOpen(true);
+  };
 
 
 
@@ -363,6 +406,113 @@ const ConfigurationPage: React.FC = () => {
     </div>
   );
 
+  const renderIncentives = () => {
+    const { getCurrencySymbol } = useConfig();
+    const currencySymbol = getCurrencySymbol();
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">Incentivos de Saldo</h2>
+              <p className="text-gray-600 mt-1">Configura los incentivos que ofreces al recargar saldo</p>
+            </div>
+            <button
+              onClick={handleAddIncentive}
+              className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Agregar Incentivo</span>
+            </button>
+          </div>
+
+          {allIncentives.length === 0 ? (
+            <div className="text-center py-8">
+              <div className="text-gray-400 mb-4">
+                <Gift className="w-16 h-16 mx-auto" />
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No hay incentivos configurados</h3>
+              <p className="text-gray-600 mb-4">Crea tu primer incentivo para ofrecer regalos al recargar saldo</p>
+              <button
+                onClick={handleAddIncentive}
+                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg"
+              >
+                Crear Primer Incentivo
+              </button>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Paga Cliente
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Recibe Saldo
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Regalo
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Estado
+                    </th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Acciones
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {allIncentives.map((incentive: BalanceIncentive) => (
+                    <tr key={incentive.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {currencySymbol}{incentive.customerPayment.toFixed(2)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {currencySymbol}{incentive.totalBalance.toFixed(2)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
+                        +{currencySymbol}{incentive.bonusAmount.toFixed(2)} ({((incentive.bonusAmount / incentive.customerPayment) * 100).toFixed(1)}%)
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                          incentive.isActive 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {incentive.isActive ? 'Activo' : 'Inactivo'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <div className="flex items-center justify-end space-x-2">
+                          <button
+                            onClick={() => handleEditIncentive(incentive)}
+                            className="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50"
+                            title="Editar"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteIncentive(incentive)}
+                            className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50"
+                            title="Eliminar"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderSalons = () => {
     const activeSalon = salons.find(s => s.id === activeSalonId);
 
@@ -517,6 +667,9 @@ const ConfigurationPage: React.FC = () => {
         {activeSection === 'customers' && (
           <div className="h-full overflow-y-auto p-6">{renderCustomers()}</div>
         )}
+        {activeSection === 'incentives' && (
+          <div className="h-full overflow-y-auto p-6">{renderIncentives()}</div>
+        )}
         {activeSection === 'salons' && (
           <div className="h-full">{renderSalons()}</div>
         )}
@@ -537,6 +690,14 @@ const ConfigurationPage: React.FC = () => {
         title="Eliminar Cliente"
         message={`¿Estás seguro de que deseas eliminar al cliente "${customerToDelete?.name} ${customerToDelete?.lastName}"? Esta acción no se puede deshacer.`}
         type="danger"
+      />
+
+      <BalanceIncentiveModal
+        isOpen={isIncentiveModalOpen}
+        onClose={() => setIsIncentiveModalOpen(false)}
+        onSave={handleSaveIncentive}
+        incentive={selectedIncentive}
+        title={selectedIncentive ? 'Editar Incentivo de Saldo' : 'Agregar Incentivo de Saldo'}
       />
     </div>
   );

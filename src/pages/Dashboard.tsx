@@ -28,8 +28,11 @@ import { useTables } from '../contexts/TableContext';
 import { useConfig } from '../contexts/ConfigContext';
 import { useProducts } from '../contexts/ProductContext';
 import { useCustomers, Customer } from '../contexts/CustomerContext';
+import { useBalanceIncentives } from '../contexts/BalanceIncentiveContext';
 import CustomerSelector from '../components/CustomerSelector';
 import CustomerModal from '../components/CustomerModal';
+import BalanceRechargeModal from '../components/BalanceRechargeModal';
+import TransferAccountModal from '../components/TransferAccountModal';
 import { calculateTotalBase, calculateTotalVAT, calculateTotalWithVAT, formatPrice } from '../utils/taxUtils';
 import { ProductTariff } from '../types/product';
 import { db } from '../database/db';
@@ -81,6 +84,9 @@ const Dashboard: React.FC = () => {
   // Modal para recargar saldo
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [customerToEdit, setCustomerToEdit] = useState<Customer | null>(null);
+  const [showBalanceRechargeModal, setShowBalanceRechargeModal] = useState(false);
+  // Modal de traslado de cuenta
+  const [showTransferModal, setShowTransferModal] = useState(false);
   // Edición de tickets (desde Pedidos)
   const [editOrderId, setEditOrderId] = useState<number | null>(null);
   const [originalTotalForEdit, setOriginalTotalForEdit] = useState<number | null>(null);
@@ -92,10 +98,11 @@ const Dashboard: React.FC = () => {
     newTax?: number; 
   } | null>(null);
   
-  const { addOrderToTable, getTableOrderItems, clearTableOrder, tables, removeNamedAccount } = useTables();
+  const { addOrderToTable, getTableOrderItems, clearTableOrder, tables, removeNamedAccount, addNamedAccount, updateTableStatus, salons } = useTables();
   const { getCurrencySymbol, getTaxRate, getModifiersForCategory } = useConfig();
   const { products, categories } = useProducts();
   const { customers, updateCustomer } = useCustomers();
+  const { incentives } = useBalanceIncentives();
 
   // Solo productos activos
   const activeProducts = products.filter(p => p.isActive);
@@ -453,21 +460,184 @@ const Dashboard: React.FC = () => {
   // Función para abrir modal de recarga de saldo
   const handleRechargeBalance = () => {
     if (selectedCustomer) {
-      setCustomerToEdit(selectedCustomer);
-      setShowCustomerModal(true);
+      setShowBalanceRechargeModal(true);
+    }
+  };
+
+  // Función para abrir modal de traslado de cuenta
+  const handleTransferAccount = () => {
+    if (selectedCustomer) {
+      setShowTransferModal(true);
+    }
+  };
+
+  // Función para completar el traslado de cuenta
+  const handleTransferAccountComplete = (sourceTable: TableData, customer: Customer) => {
+    console.log('Iniciando traslado de cuenta:', { sourceTable, customer });
+    try {
+            // Obtener todas las mesas de todos los salones para la verificación
+      const allTables = salons.flatMap(s => s.tables);
+      
+      // Verificar si el cliente ya tiene una cuenta por nombre abierta
+      console.log('Verificando cuentas existentes para el cliente:', customer.id);
+      console.log('Todas las mesas:', allTables);
+      
+      const existingNamedAccount = allTables.find(table => 
+        table.id !== sourceTable.id && 
+        table.assignedCustomer?.id === customer.id
+      );
+    
+      let customerAccountId: string;
+      
+      if (existingNamedAccount) {
+        console.log('Cliente ya tiene cuenta abierta, usando la existente:', existingNamedAccount);
+        // Usar la cuenta existente del cliente
+        customerAccountId = existingNamedAccount.id;
+      } else {
+        // El cliente no tiene cuenta abierta, crear una nueva
+        console.log('Cliente no tiene cuenta abierta, creando nueva');
+        const customerAccountName = `${customer.name} ${customer.lastName}`;
+        
+        // Buscar si ya existe una cuenta por nombre para este cliente
+        console.log('Buscando cuenta existente para:', customerAccountName);
+        const existingAccount = allTables.find(table => 
+          table.name === customerAccountName && 
+          table.id !== sourceTable.id
+        );
+      
+        if (existingAccount) {
+          // Usar la cuenta existente
+          console.log('Usando cuenta existente:', existingAccount);
+          customerAccountId = existingAccount.id;
+        } else {
+          // Crear una nueva cuenta por nombre
+          console.log('Creando nueva cuenta por nombre');
+          try {
+            customerAccountId = addNamedAccount(customerAccountName);
+            console.log('Nueva cuenta creada con ID:', customerAccountId);
+          } catch (error) {
+            console.error('Error creando cuenta por nombre:', error);
+            toast.error('Error al crear la cuenta por nombre');
+            return;
+          }
+        }
+      }
+
+      // Obtener los pedidos de la mesa origen
+      const tableOrderItems = getTableOrderItems(sourceTable.id);
+      console.log('Productos encontrados en la mesa:', tableOrderItems);
+      
+      if (tableOrderItems.length === 0) {
+        toast.error('La mesa seleccionada no tiene productos para trasladar');
+        return;
+      }
+
+
+
+      // Mover todos los productos de la mesa a la cuenta del cliente
+      const customerAccountName = `${customer.name} ${customer.lastName}`;
+      const total = tableOrderItems.reduce((sum, item) => sum + item.totalPrice, 0);
+      console.log('Total a trasladar:', total);
+      console.log('Trasladando a cuenta:', customerAccountId);
+      
+      try {
+        addOrderToTable(customerAccountId, total, tableOrderItems, customer);
+        console.log('Productos trasladados exitosamente');
+
+        // Limpiar la mesa origen
+        console.log('Limpiando mesa origen:', sourceTable.id);
+        clearTableOrder(sourceTable.id);
+        
+        // Actualizar el estado de la mesa origen a disponible
+        updateTableStatus(sourceTable.id, 'available');
+        console.log('Mesa origen liberada');
+
+        toast.success(`Cuenta trasladada exitosamente de Mesa ${sourceTable.number} a ${customerAccountName}`);
+        
+        // Limpiar el Dashboard después del traslado
+        setSelectedCustomer(null);
+        setSelectedTable(null);
+        setCurrentOrder([]);
+        
+        // Cerrar el modal
+        setShowTransferModal(false);
+      } catch (error) {
+        console.error('Error durante el traslado:', error);
+        toast.error('Error durante el traslado de la cuenta');
+        return;
+      }
+      
+    } catch (error) {
+      console.error('Error trasladando cuenta:', error);
+      toast.error('Error al trasladar la cuenta');
     }
   };
 
   // Función para manejar la actualización del cliente
-  const handleCustomerUpdate = async (updatedCustomer: Customer) => {
+  const handleCustomerUpdate = async (updatedCustomer: any) => {
     try {
-      await updateCustomer(updatedCustomer);
+      await updateCustomer(updatedCustomer.id!, updatedCustomer);
       // Actualizar el cliente seleccionado con los nuevos datos
       setSelectedCustomer(updatedCustomer);
       toast.success(`Saldo de ${updatedCustomer.name} ${updatedCustomer.lastName} actualizado a ${getCurrencySymbol()}${updatedCustomer.balance.toFixed(2)}`);
     } catch (error) {
       toast.error('Error al actualizar el saldo del cliente');
     }
+  };
+
+  // Función para manejar la recarga de saldo con incentivos
+  const handleBalanceRecharge = async (customer: Customer, amount: number, bonus: number) => {
+    try {
+      const newBalance = customer.balance + amount + bonus;
+      const updatedCustomer = {
+        ...customer,
+        balance: newBalance
+      };
+      
+      await updateCustomer(customer.id!, updatedCustomer);
+      setSelectedCustomer(updatedCustomer);
+      
+      const totalReceived = amount + bonus;
+      if (bonus > 0) {
+        toast.success(`¡Recarga exitosa! ${customer.name} pagó ${getCurrencySymbol()}${amount.toFixed(2)} y recibió ${getCurrencySymbol()}${totalReceived.toFixed(2)} (${getCurrencySymbol()}${bonus.toFixed(2)} de regalo)`);
+      } else {
+        toast.success(`Recarga exitosa! ${customer.name} ahora tiene ${getCurrencySymbol()}${newBalance.toFixed(2)}`);
+      }
+    } catch (error) {
+      toast.error('Error al recargar el saldo del cliente');
+    }
+  };
+
+  // Función para abrir modal de cobro para recarga de saldo
+  const handleOpenRechargePayment = (amount: number, bonus: number) => {
+    // Crear un pedido ficticio para la recarga
+    const rechargeOrderItems = [{
+      productId: 'recharge',
+      productName: `Recarga de Saldo${bonus > 0 ? ` + ${getCurrencySymbol()}${bonus.toFixed(2)} regalo` : ''}`,
+      quantity: 1,
+      unitPrice: amount,
+      totalPrice: amount,
+      status: 'pending'
+    }];
+
+    // Calcular totales
+    const subtotal = amount;
+    const tax = 0; // Las recargas no llevan IVA
+    const total = amount;
+
+    // Abrir modal de cobro
+    setIsPaymentModalOpen(true);
+    
+    // Guardar datos de recarga para usar en el modal de cobro
+    localStorage.setItem('rechargeData', JSON.stringify({
+      customer: selectedCustomer,
+      amount,
+      bonus,
+      orderItems: rechargeOrderItems,
+      subtotal,
+      tax,
+      total
+    }));
   };
 
   const handleTableSelect = (table: TableData) => {
@@ -795,22 +965,31 @@ const Dashboard: React.FC = () => {
               placeholder="Seleccionar cliente (opcional)"
             />
             
-            {/* Botón de recarga de saldo */}
+            {/* Botones del cliente */}
             {selectedCustomer && (
-              <div className="flex space-x-2">
+              <div className="space-y-2">
+                <div className="flex space-x-2">
+                  <button
+                    onClick={handleRechargeBalance}
+                    className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white py-3 px-4 rounded-xl font-medium flex items-center justify-center space-x-2 transition-all duration-200 hover:shadow-lg hover:scale-105 text-sm"
+                  >
+                    <DollarSign className="w-4 h-4" />
+                    <span>Recargar Saldo</span>
+                  </button>
+                  <button
+                    onClick={() => setSelectedCustomer(null)}
+                    className="px-4 py-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 text-gray-500 hover:text-red-500 hover:border-red-300 shadow-sm hover:shadow-md min-w-[48px] min-h-[48px] flex items-center justify-center text-lg font-bold"
+                    title="Quitar cliente"
+                  >
+                    ✕
+                  </button>
+                </div>
                 <button
-                  onClick={handleRechargeBalance}
-                  className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white py-3 px-4 rounded-xl font-medium flex items-center justify-center space-x-2 transition-all duration-200 hover:shadow-lg hover:scale-105 text-sm"
+                  onClick={handleTransferAccount}
+                  className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white py-3 px-4 rounded-xl font-medium flex items-center justify-center space-x-2 transition-all duration-200 hover:shadow-lg hover:scale-105 text-sm"
                 >
-                  <DollarSign className="w-4 h-4" />
-                  <span>Recargar Saldo</span>
-                </button>
-                <button
-                  onClick={() => setSelectedCustomer(null)}
-                  className="px-4 py-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 text-gray-500 hover:text-red-500 hover:border-red-300 shadow-sm hover:shadow-md min-w-[48px] min-h-[48px] flex items-center justify-center text-lg font-bold"
-                  title="Quitar cliente"
-                >
-                  ✕
+                  <Link2 className="w-4 h-4" />
+                  <span>Trasladar Cuenta a Cliente</span>
                 </button>
               </div>
             )}
@@ -1247,7 +1426,29 @@ const Dashboard: React.FC = () => {
              }}
              customer={customerToEdit}
              onSave={handleCustomerUpdate}
-             title="Recargar Saldo del Cliente"
+           />
+         )}
+
+         {/* Modal de recarga de saldo con incentivos */}
+         {showBalanceRechargeModal && selectedCustomer && (
+           <BalanceRechargeModal
+             isOpen={showBalanceRechargeModal}
+             onClose={() => setShowBalanceRechargeModal(false)}
+             customer={selectedCustomer}
+             incentives={incentives}
+             onRecharge={handleBalanceRecharge}
+             onOpenPaymentModal={handleOpenRechargePayment}
+           />
+         )}
+
+         {/* Modal de traslado de cuenta */}
+         {showTransferModal && selectedCustomer && (
+           <TransferAccountModal
+             isOpen={showTransferModal}
+             onClose={() => setShowTransferModal(false)}
+             customer={selectedCustomer}
+             tables={tables}
+             onTransfer={handleTransferAccountComplete}
            />
          )}
       </div>

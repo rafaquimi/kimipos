@@ -11,7 +11,8 @@ import {
   Users,
   BarChart3,
   Receipt,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Gift
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -64,6 +65,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       href: '/customers',
       icon: Users,
       description: 'Base de datos de clientes'
+    },
+    {
+      name: 'Incentivos de Saldo',
+      href: '/configuration/incentives',
+      icon: Gift,
+      description: 'Configuración de incentivos'
     },
     {
       name: 'Reportes',

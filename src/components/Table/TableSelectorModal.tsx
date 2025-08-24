@@ -5,6 +5,7 @@ import TableComponent, { TableData } from './TableComponent';
 import DecorItem from '../Decor/DecorItem';
 import TableConnections from './TableConnections';
 import { useTables } from '../../contexts/TableContext';
+import { useCustomers } from '../../contexts/CustomerContext';
 import toast from 'react-hot-toast';
 
 interface TableSelectorModalProps {
@@ -31,8 +32,11 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
   const [temporaryName, setTemporaryName] = useState('');
   const [showCustomerNameModal, setShowCustomerNameModal] = useState(false);
   const [customerName, setCustomerName] = useState('');
+  const [showCustomerSelector, setShowCustomerSelector] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   
   const { salons, activeSalonId, setActiveSalon, tables, decor, updateTableTemporaryName, updateTableStatus, addNamedAccount } = useTables();
+  const { customers } = useCustomers();
   const navigate = useNavigate();
 
   // Limpiar estado del modal de nombre cuando se cierre el modal principal
@@ -114,31 +118,45 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
   const handleCustomerNameSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!customerName.trim()) {
-      toast.error('Por favor ingresa el nombre del cliente');
+    if (!customerName.trim() && !selectedCustomer) {
+      toast.error('Por favor ingresa el nombre del cliente o selecciona uno existente');
       return;
     }
 
     try {
-      const accountId = addNamedAccount(customerName.trim());
-      toast.success(`Cuenta creada para ${customerName.trim()}`);
+      let accountName = '';
+      let customerData = null;
+      
+      if (selectedCustomer) {
+        // Usar cliente existente
+        accountName = `${selectedCustomer.name} ${selectedCustomer.lastName}`;
+        customerData = selectedCustomer;
+      } else {
+        // Usar nombre nuevo
+        accountName = customerName.trim();
+      }
+      
+      const accountId = addNamedAccount(accountName);
+      toast.success(`Cuenta creada para ${accountName}`);
       
       // Crear una mesa virtual para el dashboard
       const virtualTable: TableData = {
         id: accountId,
-        number: customerName.trim(),
-        name: customerName.trim(),
+        number: accountName,
+        name: accountName,
         status: 'occupied',
         x: 0,
         y: 0,
         capacity: 1,
         occupiedSince: new Date(),
-        temporaryName: customerName.trim()
+        temporaryName: accountName,
+        assignedCustomer: customerData
       };
       
       // Cerrar el modal y seleccionar la mesa virtual
       setShowCustomerNameModal(false);
       setCustomerName('');
+      setSelectedCustomer(null);
       onSelectTable(virtualTable);
       onClose();
     } catch (error) {
@@ -154,6 +172,7 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
   const handleCancelCustomerNameModal = () => {
     setShowCustomerNameModal(false);
     setCustomerName('');
+    setSelectedCustomer(null);
   };
 
   
@@ -502,18 +521,64 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
               </div>
               
               <form onSubmit={handleCustomerNameSubmit}>
+                {/* Cliente seleccionado */}
+                {selectedCustomer && (
+                  <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-blue-900">
+                          Cliente seleccionado:
+                        </p>
+                        <p className="text-sm text-blue-700">
+                          {selectedCustomer.name} {selectedCustomer.lastName}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCustomer(null)}
+                        className="text-blue-500 hover:text-blue-700"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Botón para seleccionar cliente existente */}
+                {!selectedCustomer && (
+                  <div className="mb-4">
+                    <button
+                      type="button"
+                      onClick={() => setShowCustomerSelector(true)}
+                      className="w-full px-4 py-3 border-2 border-dashed border-blue-300 rounded-xl text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-colors text-sm font-medium"
+                    >
+                      📋 Seleccionar Cliente Existente
+                    </button>
+                  </div>
+                )}
+
+                {/* Separador */}
+                {!selectedCustomer && (
+                  <div className="mb-4 flex items-center">
+                    <div className="flex-1 border-t border-gray-300"></div>
+                    <span className="px-3 text-sm text-gray-500">o</span>
+                    <div className="flex-1 border-t border-gray-300"></div>
+                  </div>
+                )}
+
+                {/* Campo de nombre nuevo */}
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Nombre del Cliente *
+                    {selectedCustomer ? 'Nombre adicional (opcional)' : 'Nombre del Cliente *'}
                   </label>
                   <input
                     type="text"
-                    required
+                    required={!selectedCustomer}
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Juan Pérez, María García..."
+                    placeholder={selectedCustomer ? "Nombre adicional..." : "Juan Pérez, María García..."}
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 text-sm"
-                    autoFocus
+                    autoFocus={!selectedCustomer}
                   />
                 </div>
 
@@ -533,6 +598,67 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de selección de clientes */}
+      {showCustomerSelector && (
+        <div className="fixed inset-0 z-[60] overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            {/* Overlay */}
+            <div 
+              className="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75"
+              onClick={() => setShowCustomerSelector(false)}
+            />
+
+            {/* Modal */}
+            <div className="inline-block w-full max-w-md p-6 my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-xl rounded-2xl">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Seleccionar Cliente
+                </h3>
+                <button
+                  onClick={() => setShowCustomerSelector(false)}
+                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="max-h-64 overflow-y-auto space-y-2">
+                {customers.length === 0 ? (
+                  <p className="text-center text-gray-500 py-4">
+                    No hay clientes registrados
+                  </p>
+                ) : (
+                  customers.map((customer) => (
+                    <button
+                      key={customer.id}
+                      onClick={() => {
+                        setSelectedCustomer(customer);
+                        setShowCustomerSelector(false);
+                      }}
+                      className="w-full p-3 text-left border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                    >
+                      <div className="font-medium text-gray-900">
+                        {customer.name} {customer.lastName}
+                      </div>
+                      {customer.email && (
+                        <div className="text-sm text-gray-600">
+                          {customer.email}
+                        </div>
+                      )}
+                      {customer.balance > 0 && (
+                        <div className="text-sm text-green-600 font-medium">
+                          Saldo: €{customer.balance.toFixed(2)}
+                        </div>
+                      )}
+                    </button>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </div>

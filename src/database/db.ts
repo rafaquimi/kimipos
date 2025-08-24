@@ -136,6 +136,17 @@ export interface NamedAccount {
   syncStatus?: 'pending' | 'synced' | 'conflict';
 }
 
+export interface BalanceIncentive {
+  id?: number;
+  customerPayment: number;    // Lo que paga el cliente (ej: 50€)
+  totalBalance: number;       // Lo que recibe como saldo (ej: 65€)
+  bonusAmount: number;        // Regalo calculado (ej: 15€)
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  syncStatus?: 'pending' | 'synced' | 'conflict';
+}
+
 // Base de datos
 export class KimiPOSDatabase extends Dexie {
   categories!: Table<Category>;
@@ -148,6 +159,7 @@ export class KimiPOSDatabase extends Dexie {
   configuration!: Table<Configuration>;
   syncLogs!: Table<SyncLog>;
   namedAccounts!: Table<NamedAccount>;
+  balanceIncentives!: Table<BalanceIncentive>;
 
   constructor() {
     super('KimiPOSDatabase');
@@ -170,6 +182,14 @@ export class KimiPOSDatabase extends Dexie {
 
     this.version(3).stores({
       customers: '++id, name, lastName, email, phone, cardCode, syncStatus'
+    });
+
+    this.version(4).stores({
+      balanceIncentives: '++id, customerPayment, totalBalance, isActive, syncStatus'
+    });
+
+    this.version(5).stores({
+      balanceIncentives: '++id, customerPayment, totalBalance, isActive, syncStatus'
     });
 
     // Hooks para auto-timestamps y sync tracking
@@ -271,6 +291,17 @@ export class KimiPOSDatabase extends Dexie {
     });
 
     this.namedAccounts.hook('updating', function (modifications, primKey, obj, trans) {
+      modifications.updatedAt = new Date();
+      modifications.syncStatus = 'pending';
+    });
+
+    this.balanceIncentives.hook('creating', function (primKey, obj, trans) {
+      obj.createdAt = new Date();
+      obj.updatedAt = new Date();
+      obj.syncStatus = 'pending';
+    });
+
+    this.balanceIncentives.hook('updating', function (modifications, primKey, obj, trans) {
       modifications.updatedAt = new Date();
       modifications.syncStatus = 'pending';
     });

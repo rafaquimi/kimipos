@@ -190,7 +190,11 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 	const activeSalon = salons.find(s => s.id === activeSalonId) || salons[0];
 
 	const updateTableStatus = (tableId: string, status: TableData['status'], orderData?: any) => {
-		setSalons(prev => prev.map(s => s.id !== activeSalonId ? s : ({
+		// Determinar en qué salón está la mesa
+		const isNamedAccount = tableId.startsWith('account-');
+		const targetSalonId = isNamedAccount ? 'named-accounts' : activeSalonId;
+		
+		setSalons(prev => prev.map(s => s.id !== targetSalonId ? s : ({
 			...s,
 			tables: s.tables.map(t => t.id === tableId ? ({
 				...t,
@@ -204,13 +208,22 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 	const addOrderToTable = (tableId: string, orderTotal: number, orderItems?: OrderItem[], assignedCustomer?: any) => {
 		console.log('Añadiendo pedido a mesa:', tableId, orderItems, assignedCustomer);
 		
-		setSalons(prev => prev.map(s => s.id !== activeSalonId ? s : ({
+		// Determinar en qué salón está la mesa
+		const isNamedAccount = tableId.startsWith('account-');
+		const targetSalonId = isNamedAccount ? 'named-accounts' : activeSalonId;
+		
+		// Obtener los productos existentes en la mesa
+		const existingItems = getTableOrderItems(tableId);
+		const combinedItems = orderItems ? [...existingItems, ...orderItems] : existingItems;
+		const combinedTotal = combinedItems.reduce((sum, item) => sum + item.totalPrice, 0);
+		
+		setSalons(prev => prev.map(s => s.id !== targetSalonId ? s : ({
 			...s,
 			tables: s.tables.map(t => t.id === tableId ? ({
 				...t,
 				status: 'occupied',
 				occupiedSince: new Date(),
-				currentOrder: { id: `order-${Date.now()}`, total: orderTotal, itemCount: orderItems?.length || 1 },
+				currentOrder: { id: `order-${Date.now()}`, total: combinedTotal, itemCount: combinedItems.length },
 				assignedCustomer: assignedCustomer || t.assignedCustomer, // Mantener cliente existente si no se proporciona uno nuevo
 				temporaryName: assignedCustomer ? undefined : t.temporaryName // Eliminar nombre temporal si se asigna un cliente
 			}) : t)
@@ -218,8 +231,8 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
 		if (orderItems) {
 			setTableOrderItems(prev => {
-				const newItems = { ...prev, [tableId]: orderItems };
-				console.log('Guardando pedidos:', newItems);
+				const newItems = { ...prev, [tableId]: combinedItems };
+				console.log('Guardando pedidos combinados:', newItems);
 				return newItems;
 			});
 		}
@@ -242,7 +255,11 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		}
 
 		// Limpiar todas las mesas del grupo (o solo la mesa individual)
-		setSalons(prev => prev.map(s => s.id !== activeSalonId ? s : ({
+		// Determinar en qué salón está la mesa
+		const isNamedAccount = tableId.startsWith('account-');
+		const targetSalonId = isNamedAccount ? 'named-accounts' : activeSalonId;
+		
+		setSalons(prev => prev.map(s => s.id !== targetSalonId ? s : ({
 			...s,
 			tables: s.tables.map(t => tablesToClear.includes(t.id) ? ({
 				...t,
@@ -270,7 +287,12 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
 
 	const getTableById = (tableId: string) => {
-		return activeSalon?.tables.find(t => t.id === tableId);
+		// Buscar en todos los salones, no solo en el activo
+		for (const salon of salons) {
+			const table = salon.tables.find(t => t.id === tableId);
+			if (table) return table;
+		}
+		return undefined;
 	};
 
 	const getTableOrderItems = (tableId: string) => tableOrderItems[tableId] || [];
@@ -550,7 +572,7 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		salons,
 		activeSalonId,
 		setActiveSalon: setActiveSalonId,
-		tables: activeSalon?.tables || [],
+		tables: activeSalon?.tables || [], // Solo mesas del salón activo
 		decor: activeSalon?.decor || [],
 		addSalon,
 		removeSalon,

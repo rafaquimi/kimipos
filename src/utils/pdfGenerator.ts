@@ -28,6 +28,8 @@ interface TicketData {
   balanceAmount?: number;
   remainingAmount?: number;
   remainingPaymentMethod?: 'cash' | 'card';
+  // Tipo de documento
+  documentType?: 'ticket' | 'recharge' | 'balance_payment';
 }
 
 export const generatePOSTicketPDF = (ticketData: TicketData): string => {
@@ -45,12 +47,31 @@ export const generatePOSTicketPDF = (ticketData: TicketData): string => {
     const rightMargin = 10;
     const contentWidth = pageWidth - leftMargin - rightMargin;
 
+    // Determinar el tipo de documento
+    const isRecharge = ticketData.documentType === 'recharge';
+    const isBalancePayment = ticketData.documentType === 'balance_payment';
+    
     // Encabezado del restaurante
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
     const titleWidth = doc.getTextWidth(ticketData.restaurantName);
     const titleX = (pageWidth - titleWidth) / 2;
     doc.text(ticketData.restaurantName, titleX, yPosition);
+    yPosition += 20;
+    
+    // Título del documento según el tipo
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    let documentTitle = 'TICKET';
+    if (isRecharge) {
+      documentTitle = 'RECARGA DE SALDO';
+    } else if (isBalancePayment) {
+      documentTitle = 'ALBARÁN';
+    }
+    
+    const documentTitleWidth = doc.getTextWidth(documentTitle);
+    const documentTitleX = (pageWidth - documentTitleWidth) / 2;
+    doc.text(documentTitle, documentTitleX, yPosition);
     yPosition += 20;
 
     // Línea separadora
@@ -66,8 +87,12 @@ export const generatePOSTicketPDF = (ticketData: TicketData): string => {
     yPosition += 12;
     doc.text(`Hora: ${now.toLocaleTimeString('es-ES')}`, leftMargin, yPosition);
     yPosition += 12;
-    doc.text(`Mesa: ${ticketData.tableNumber}`, leftMargin, yPosition);
-    yPosition += 15;
+    
+    // Mostrar mesa solo si no es recarga
+    if (!isRecharge) {
+      doc.text(`Mesa: ${ticketData.tableNumber}`, leftMargin, yPosition);
+      yPosition += 15;
+    }
 
     // Información del cliente si existe
     if (ticketData.selectedCustomer) {
@@ -203,6 +228,21 @@ export const generatePOSTicketPDF = (ticketData: TicketData): string => {
       const paymentMethodText = ticketData.paymentMethod === 'cash' ? 'Efectivo' : 'Tarjeta';
       doc.text(`Pago: ${paymentMethodText}`, leftMargin, yPosition);
       yPosition += 20;
+    }
+    
+    // Información adicional para recargas
+    if (isRecharge && ticketData.selectedCustomer) {
+      yPosition += 10;
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Saldo actualizado:', leftMargin, yPosition);
+      yPosition += 12;
+      
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      const newBalance = ticketData.selectedCustomer.balance + ticketData.total;
+      doc.text(`${ticketData.currencySymbol}${newBalance.toFixed(2)}`, leftMargin, yPosition);
+      yPosition += 12;
     }
 
     // Pie de página
