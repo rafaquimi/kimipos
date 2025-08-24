@@ -12,6 +12,15 @@ interface OrderItem {
 	modifiers?: string[];
 }
 
+interface PartialPayment {
+	id: string;
+	tableId: string;
+	amount: number;
+	paymentMethod: 'cash' | 'card';
+	date: Date;
+	receiptNumber: string;
+}
+
 export interface SalonData {
 	id: string;
 	name: string;
@@ -34,7 +43,7 @@ interface TableContextType {
 	renameSalon: (salonId: string, name: string) => void;
 	// Mesas y pedidos
 	updateTableStatus: (tableId: string, status: TableData['status'], orderData?: any) => void;
-	addOrderToTable: (tableId: string, orderTotal: number, orderItems?: OrderItem[], assignedCustomer?: any) => void;
+	addOrderToTable: (tableId: string, orderTotal: number, orderItems?: OrderItem[], assignedCustomer?: any, replaceExisting?: boolean) => void;
 	clearTableOrder: (tableId: string) => void;
 	getTableById: (tableId: string) => TableData | undefined;
 	getTableOrderItems: (tableId: string) => OrderItem[];
@@ -56,6 +65,12 @@ interface TableContextType {
 	// Cuentas por nombre
 	addNamedAccount: (customerName: string) => string;
 	removeNamedAccount: (accountId: string) => void;
+	// Cobros parciales
+	addPartialPayment: (tableId: string, amount: number, paymentMethod: 'cash' | 'card') => PartialPayment;
+	getPartialPayments: (tableId: string) => PartialPayment[];
+	getTotalPartialPayments: (tableId: string) => number;
+	clearPartialPayments: (tableId: string) => void;
+	updateTableTotalAfterPartialPayment: (tableId: string, partialAmount: number) => void;
 }
 
 const TableContext = createContext<TableContextType | undefined>(undefined);
@@ -154,6 +169,9 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
 	// Pedidos por mesa (id mesa -> items)
 	const [tableOrderItems, setTableOrderItems] = useState<Record<string, OrderItem[]>>({});
+	
+	// Cobros parciales por mesa (id mesa -> cobros parciales)
+	const [partialPayments, setPartialPayments] = useState<Record<string, PartialPayment[]>>({});
 
 	// Cargar pedidos desde localStorage
 	useEffect(() => {
@@ -205,7 +223,7 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		})));
 	};
 
-	const addOrderToTable = (tableId: string, orderTotal: number, orderItems?: OrderItem[], assignedCustomer?: any) => {
+	const addOrderToTable = (tableId: string, orderTotal: number, orderItems?: OrderItem[], assignedCustomer?: any, replaceExisting: boolean = false) => {
 		console.log('Añadiendo pedido a mesa:', tableId, orderItems, assignedCustomer);
 		
 		// Determinar en qué salón está la mesa
@@ -214,7 +232,7 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		
 		// Obtener los productos existentes en la mesa
 		const existingItems = getTableOrderItems(tableId);
-		const combinedItems = orderItems ? [...existingItems, ...orderItems] : existingItems;
+		const combinedItems = orderItems ? (replaceExisting ? orderItems : [...existingItems, ...orderItems]) : existingItems;
 		const combinedTotal = combinedItems.reduce((sum, item) => sum + item.totalPrice, 0);
 		
 		setSalons(prev => prev.map(s => s.id !== targetSalonId ? s : ({
@@ -568,6 +586,70 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		});
 	};
 
+	// Funciones para cobros parciales
+	const addPartialPayment = (tableId: string, amount: number, paymentMethod: 'cash' | 'card'): PartialPayment => {
+		const payment: PartialPayment = {
+			id: `payment-${Date.now()}`,
+			tableId,
+			amount,
+			paymentMethod,
+			date: new Date(),
+			receiptNumber: `R${Date.now()}`
+		};
+
+		setPartialPayments(prev => ({
+			...prev,
+			[tableId]: [...(prev[tableId] || []), payment]
+		}));
+
+		return payment;
+	};
+
+	const getPartialPayments = (tableId: string): PartialPayment[] => {
+		return partialPayments[tableId] || [];
+	};
+
+	const getTotalPartialPayments = (tableId: string): number => {
+		const payments = partialPayments[tableId] || [];
+		return payments.reduce((total, payment) => total + payment.amount, 0);
+	};
+
+	const clearPartialPayments = (tableId: string) => {
+		setPartialPayments(prev => {
+			const newPayments = { ...prev };
+			delete newPayments[tableId];
+			return newPayments;
+		});
+	};
+
+	const updateTableTotalAfterPartialPayment = (tableId: string, partialAmount: number) => {
+		// Determinar en qué salón está la mesa
+		const isNamedAccount = tableId.startsWith('account-');
+		const targetSalonId = isNamedAccount ? 'named-accounts' : activeSalonId;
+		
+		// Obtener la mesa actual
+		const table = getTableById(tableId);
+		if (!table) return;
+		
+		// Calcular el nuevo total restando el cobro parcial
+		const currentTotal = table.currentOrder?.total || 0;
+		const newTotal = Math.max(0, currentTotal - partialAmount);
+		
+		// Actualizar el total en la mesa
+		setSalons(prev => prev.map(s => s.id !== targetSalonId ? s : ({
+			...s,
+			tables: s.tables.map(t => t.id === tableId ? ({
+				...t,
+				currentOrder: {
+					...t.currentOrder,
+					total: newTotal
+				}
+			}) : t)
+		})));
+		
+		console.log(`Total actualizado para mesa ${tableId}: ${currentTotal} -> ${newTotal} (cobro parcial: ${partialAmount})`);
+	};
+
 	const value: TableContextType = {
 		salons,
 		activeSalonId,
@@ -595,7 +677,12 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		updateDecorPosition,
 		updateDecorRotation,
 		addNamedAccount,
-		removeNamedAccount
+		removeNamedAccount,
+		addPartialPayment,
+		getPartialPayments,
+		getTotalPartialPayments,
+		clearPartialPayments,
+		updateTableTotalAfterPartialPayment
 	};
 
 	return (

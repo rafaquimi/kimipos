@@ -10,6 +10,15 @@ interface OrderItem {
   modifiers?: string[];
 }
 
+interface PartialPayment {
+  id: string;
+  tableId: string;
+  amount: number;
+  paymentMethod: 'cash' | 'card';
+  date: Date;
+  receiptNumber: string;
+}
+
 interface TicketData {
   restaurantName: string;
   tableNumber: string;
@@ -29,7 +38,10 @@ interface TicketData {
   remainingAmount?: number;
   remainingPaymentMethod?: 'cash' | 'card';
   // Tipo de documento
-  documentType?: 'ticket' | 'recharge' | 'balance_payment';
+  documentType?: 'ticket' | 'recharge' | 'balance_payment' | 'partial_receipt';
+  // Información de cobros parciales
+  partialPayments?: PartialPayment[];
+  totalPartialPayments?: number;
 }
 
 export const generatePOSTicketPDF = (ticketData: TicketData): string => {
@@ -50,7 +62,8 @@ export const generatePOSTicketPDF = (ticketData: TicketData): string => {
     // Determinar el tipo de documento
     const isRecharge = ticketData.documentType === 'recharge';
     const isBalancePayment = ticketData.documentType === 'balance_payment';
-    
+    const isPartialReceipt = ticketData.documentType === 'partial_receipt';
+
     // Encabezado del restaurante
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
@@ -67,6 +80,8 @@ export const generatePOSTicketPDF = (ticketData: TicketData): string => {
       documentTitle = 'RECARGA DE SALDO';
     } else if (isBalancePayment) {
       documentTitle = 'ALBARÁN';
+    } else if (isPartialReceipt) {
+      documentTitle = 'RECIBO PARCIAL';
     }
     
     const documentTitleWidth = doc.getTextWidth(documentTitle);
@@ -90,8 +105,8 @@ export const generatePOSTicketPDF = (ticketData: TicketData): string => {
     
     // Mostrar mesa solo si no es recarga
     if (!isRecharge) {
-      doc.text(`Mesa: ${ticketData.tableNumber}`, leftMargin, yPosition);
-      yPosition += 15;
+    doc.text(`Mesa: ${ticketData.tableNumber}`, leftMargin, yPosition);
+    yPosition += 15;
     }
 
     // Información del cliente si existe
@@ -167,13 +182,107 @@ export const generatePOSTicketPDF = (ticketData: TicketData): string => {
     doc.text(taxText, pageWidth - rightMargin - taxWidth, yPosition);
     yPosition += 12;
     
-    // Total final
+    // Total final - mostrar importe pendiente si hay cobros parciales
     doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
+    
+    // Total final - mostrar siempre como "TOTAL"
     const totalText = `TOTAL: ${ticketData.currencySymbol}${ticketData.total.toFixed(2)}`;
     const totalWidth = doc.getTextWidth(totalText);
     doc.text(totalText, pageWidth - rightMargin - totalWidth, yPosition);
+    
     yPosition += 20;
+
+    // Información específica para recibos parciales
+    if (isPartialReceipt) {
+      // Línea separadora
+      doc.line(leftMargin, yPosition, pageWidth - rightMargin, yPosition);
+      yPosition += 10;
+      
+      // Sección de cobro parcial
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text('COBRO PARCIAL', leftMargin, yPosition);
+      yPosition += 15;
+      
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      
+      // Total de la cuenta
+      const accountTotalText = `Total de la cuenta: ${ticketData.currencySymbol}${ticketData.total.toFixed(2)}`;
+      const accountTotalWidth = doc.getTextWidth(accountTotalText);
+      doc.text(accountTotalText, pageWidth - rightMargin - accountTotalWidth, yPosition);
+      yPosition += 12;
+      
+      // Monto cobrado
+      const amountPaidText = `Monto cobrado: ${ticketData.currencySymbol}${ticketData.total.toFixed(2)}`;
+      const amountPaidWidth = doc.getTextWidth(amountPaidText);
+      doc.text(amountPaidText, pageWidth - rightMargin - amountPaidWidth, yPosition);
+      yPosition += 12;
+      
+      // Monto pendiente
+      const pendingAmount = ticketData.total - ticketData.total; // Esto se calculará correctamente cuando implementemos el sistema
+      const pendingText = `Monto pendiente: ${ticketData.currencySymbol}${pendingAmount.toFixed(2)}`;
+      const pendingWidth = doc.getTextWidth(pendingText);
+      doc.text(pendingText, pageWidth - rightMargin - pendingWidth, yPosition);
+      yPosition += 15;
+      
+      // Aviso
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'italic');
+      doc.text('Este es un recibo parcial. El ticket fiscal se generará al liquidar la cuenta completa.', leftMargin, yPosition);
+      yPosition += 15;
+    }
+
+    // Información de cobros parciales en ticket final
+    if (ticketData.partialPayments && ticketData.partialPayments.length > 0) {
+      // Línea separadora
+      doc.line(leftMargin, yPosition, pageWidth - rightMargin, yPosition);
+      yPosition += 10;
+      
+      // Sección de cobros parciales
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text('PAGOS PREVIOS REALIZADOS', leftMargin, yPosition);
+      yPosition += 15;
+      
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      
+      // Resumen de la cuenta
+      const totalOriginal = ticketData.total + (ticketData.totalPartialPayments || 0);
+      const summaryText = `Total de la cuenta: ${ticketData.currencySymbol}${totalOriginal.toFixed(2)}`;
+      doc.text(summaryText, leftMargin, yPosition);
+      yPosition += 12;
+      
+      // Listar cada pago previo con más detalle
+      ticketData.partialPayments.forEach((payment, index) => {
+        const paymentDate = new Date(payment.date).toLocaleDateString('es-ES');
+        const paymentTime = new Date(payment.date).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        const paymentMethodText = payment.paymentMethod === 'cash' ? 'Efectivo' : 'Tarjeta';
+        
+        // Detalles del pago
+        const paymentText = `${paymentDate} ${paymentTime} - ${paymentMethodText}: ${ticketData.currencySymbol}${payment.amount.toFixed(2)}`;
+        doc.text(paymentText, leftMargin, yPosition);
+        yPosition += 12;
+      });
+      
+      // Resumen de pagos
+      if (ticketData.totalPartialPayments) {
+        yPosition += 5;
+        doc.setFont('helvetica', 'bold');
+        const totalPartialText = `Total pagado anteriormente: ${ticketData.currencySymbol}${ticketData.totalPartialPayments.toFixed(2)}`;
+        const totalPartialWidth = doc.getTextWidth(totalPartialText);
+        doc.text(totalPartialText, pageWidth - rightMargin - totalPartialWidth, yPosition);
+        yPosition += 12;
+        
+        // Monto final cobrado en este ticket
+        const finalPaymentText = `Pago final realizado: ${ticketData.currencySymbol}${ticketData.total.toFixed(2)}`;
+        const finalPaymentWidth = doc.getTextWidth(finalPaymentText);
+        doc.text(finalPaymentText, pageWidth - rightMargin - finalPaymentWidth, yPosition);
+        yPosition += 15;
+      }
+    }
 
     // Detalles del pago con saldo si se usó
     if (ticketData.useBalance && ticketData.balanceAmount && ticketData.balanceAmount > 0) {
@@ -223,11 +332,11 @@ export const generatePOSTicketPDF = (ticketData: TicketData): string => {
 
     // Método de pago (solo si no se usó saldo o hay monto restante)
     if (!ticketData.useBalance || (ticketData.remainingAmount && ticketData.remainingAmount > 0)) {
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'normal');
-      const paymentMethodText = ticketData.paymentMethod === 'cash' ? 'Efectivo' : 'Tarjeta';
-      doc.text(`Pago: ${paymentMethodText}`, leftMargin, yPosition);
-      yPosition += 20;
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    const paymentMethodText = ticketData.paymentMethod === 'cash' ? 'Efectivo' : 'Tarjeta';
+    doc.text(`Pago: ${paymentMethodText}`, leftMargin, yPosition);
+    yPosition += 20;
     }
     
     // Información adicional para recargas

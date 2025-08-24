@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Clock, Users } from 'lucide-react';
 import RotationHandle from '../RotationHandle';
+import { useTables } from '../../contexts/TableContext';
 
 export interface TableData {
   id: string;
@@ -59,6 +60,14 @@ const TableComponent: React.FC<TableComponentProps> = ({
   isDraggable = false,
   scale = 1
 }) => {
+  const { getTotalPartialPayments } = useTables();
+  
+  // Calcular el importe pendiente considerando cobros parciales
+  const getPendingAmount = () => {
+    if (!table.currentOrder) return 0;
+    const totalPartialPayments = getTotalPartialPayments(table.id);
+    return Math.max(0, table.currentOrder.total - totalPartialPayments);
+  };
   const [isDragging, setIsDragging] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -354,10 +363,10 @@ const TableComponent: React.FC<TableComponentProps> = ({
               </div>
             )}
             
-            {/* Total del pedido - solo en mesa principal o mesas no unidas */}
+            {/* Importe pendiente del pedido - solo en mesa principal o mesas no unidas */}
             {table.currentOrder && (!table.mergeGroup || table.isMaster) && (
               <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs font-bold px-2 py-1 rounded-md shadow-md border border-white">
-                €{table.currentOrder.total.toFixed(2)}
+                €{getPendingAmount().toFixed(2)}
               </div>
             )}
 

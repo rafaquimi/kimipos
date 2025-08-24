@@ -5,6 +5,7 @@ import { useCustomers } from '../../contexts/CustomerContext';
 import { db } from '../../database/db';
 import { calculateBasePrice, calculateVATAmount, formatPrice } from '../../utils/taxUtils';
 import { generatePOSTicketPDF, openPDFInNewWindow } from '../../utils/pdfGenerator';
+import NumericKeypad from '../NumericKeypad';
 
 interface OrderItem {
   productId: string;
@@ -34,6 +35,11 @@ interface PaymentModalProps {
   originalTax?: number;
   originalTotal?: number;
   selectedCustomer?: any; // Cliente seleccionado con saldo
+  allowPartialPayment?: boolean; // Permitir cobros parciales
+  onPartialPayment?: (amount: number, paymentMethod: 'cash' | 'card') => void; // Callback para cobros parciales
+  partialPayments?: any[]; // Datos de cobros parciales previos
+  totalPartialPayments?: number; // Total de cobros parciales previos
+  isTicketWithoutTable?: boolean; // Indica si es un ticket sin mesa
 }
 
 const PaymentModal: React.FC<PaymentModalProps> = ({
@@ -54,7 +60,12 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   originalSubtotal,
   originalTax,
   originalTotal,
-  selectedCustomer
+  selectedCustomer,
+  allowPartialPayment = false,
+  onPartialPayment,
+  partialPayments = [],
+  totalPartialPayments = 0,
+  isTicketWithoutTable = false
 }) => {
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'balance' | 'mixed'>(defaultPaymentMethod);
   const [cashReceived, setCashReceived] = useState('');
@@ -63,6 +74,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const [remainingAmount, setRemainingAmount] = useState(0);
   const [remainingPaymentMethod, setRemainingPaymentMethod] = useState<'cash' | 'card'>('cash');
   const [remainingCashReceived, setRemainingCashReceived] = useState('');
+  const [showNumericKeypad, setShowNumericKeypad] = useState(false);
+  const [editingAmountFor, setEditingAmountFor] = useState<'cash' | 'remaining' | null>(null);
   const { getCurrencySymbol, getTaxRate, config } = useConfig();
   const { refreshCustomers } = useCustomers();
 
@@ -70,14 +83,37 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const customerBalance = selectedCustomer?.balance || 0;
   const hasCustomerBalance = customerBalance > 0;
   
+  // Verificar si es una recarga y usar esos datos si están disponibles
+  const rechargeData = localStorage.getItem('rechargeData');
+  let effectiveOrderItems = orderItems;
+  let effectiveSubtotal = subtotal;
+  let effectiveTax = tax;
+  let effectiveTotal = total;
+  let effectiveCustomerName = customerName;
+  let effectiveTableNumber = tableNumber;
 
+  if (rechargeData) {
+    try {
+      const data = JSON.parse(rechargeData);
+      if (data.customer && data.amount) {
+        effectiveOrderItems = data.orderItems || orderItems;
+        effectiveSubtotal = data.subtotal || subtotal;
+        effectiveTax = data.tax || tax;
+        effectiveTotal = data.total || total;
+        effectiveCustomerName = data.customer.name + ' ' + data.customer.lastName;
+        effectiveTableNumber = 'RECARGA';
+      }
+    } catch (error) {
+      console.error('Error parsing recharge data:', error);
+    }
+  }
   
   // Calcular montos cuando se usa saldo
   useEffect(() => {
     if (useBalance && hasCustomerBalance) {
-      const balanceToUse = Math.min(customerBalance, total);
+      const balanceToUse = Math.min(customerBalance, effectiveTotal);
       setBalanceAmount(balanceToUse);
-      const remaining = total - balanceToUse;
+      const remaining = effectiveTotal - balanceToUse;
       setRemainingAmount(remaining);
       
       if (remaining > 0) {
@@ -90,7 +126,14 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       setRemainingAmount(0);
       setPaymentMethod(defaultPaymentMethod);
     }
-  }, [useBalance, customerBalance, total, defaultPaymentMethod, hasCustomerBalance]);
+  }, [useBalance, customerBalance, effectiveTotal, defaultPaymentMethod, hasCustomerBalance]);
+  
+  // Mantener useBalance en false cuando es una recarga
+  useEffect(() => {
+    if (rechargeData) {
+      setUseBalance(false);
+    }
+  }, [rechargeData]);
   
   // Resetear estado cuando se abre el modal
   useEffect(() => {
@@ -112,6 +155,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           if (data.customer && data.amount) {
             // Es una recarga, no usar saldo
             setUseBalance(false);
+            setPaymentMethod('cash'); // Forzar método de pago por defecto
+            console.log('Datos de recarga detectados:', data);
           }
         } catch (error) {
           console.error('Error parsing recharge data:', error);
@@ -120,27 +165,50 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     }
   }, [isOpen, defaultPaymentMethod]);
 
+
+
   if (!isOpen) return null;
 
   const currencySymbol = getCurrencySymbol();
-  const change = parseFloat(cashReceived) - total;
+  const change = parseFloat(cashReceived) - effectiveTotal;
   
   // Detectar si es una devolución (total negativo o producto de diferencia negativa)
-  const isRefund = total < 0 || orderItems.some(item => item.productName.includes('(-)'));
-  const isAdjustment = orderItems.some(item => item.productId === 'diff');
+  const isRefund = effectiveTotal < 0 || effectiveOrderItems.some(item => item.productName.includes('(-)'));
+  const isAdjustment = effectiveOrderItems.some(item => item.productId === 'diff');
   
   // Calcular cambio para el pago restante
   const remainingChange = parseFloat(remainingCashReceived) - remainingAmount;
+
+  // Funciones para el teclado numérico
+  const handleAmountConfirm = (newAmount: number) => {
+    if (editingAmountFor === 'cash') {
+      setCashReceived(newAmount.toString());
+    } else if (editingAmountFor === 'remaining') {
+      setRemainingCashReceived(newAmount.toString());
+    }
+    setShowNumericKeypad(false);
+    setEditingAmountFor(null);
+  };
+
+  const handleAmountCancel = () => {
+    setShowNumericKeypad(false);
+    setEditingAmountFor(null);
+  };
+
+  const openNumericKeypad = (type: 'cash' | 'remaining') => {
+    setEditingAmountFor(type);
+    setShowNumericKeypad(true);
+  };
 
   const generateTicketPDF = () => {
     try {
       console.log('Iniciando generación de PDF...');
       
       // Usar los datos originales del ticket si están disponibles (edición), sino los actuales
-      const itemsToShow = originalOrderItems || orderItems;
-      const subtotalToShow = originalSubtotal !== undefined ? originalSubtotal : subtotal;
-      const taxToShow = originalTax !== undefined ? originalTax : tax;
-      const totalToShow = originalTotal !== undefined ? originalTotal : total;
+      const itemsToShow = originalOrderItems || effectiveOrderItems;
+      const subtotalToShow = originalSubtotal !== undefined ? originalSubtotal : effectiveSubtotal;
+      const taxToShow = originalTax !== undefined ? originalTax : effectiveTax;
+      const totalToShow = originalTotal !== undefined ? originalTotal : effectiveTotal;
       
       console.log('Datos del ticket:', {
         itemsToShow,
@@ -163,8 +231,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       
       const ticketData = {
         restaurantName: config.restaurantName || 'Restaurante',
-        tableNumber,
-        customerName,
+        tableNumber: effectiveTableNumber,
+        customerName: effectiveCustomerName,
         mergedTableNumber,
         orderItems: itemsToShow,
         subtotal: subtotalToShow,
@@ -183,15 +251,40 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         documentType
       };
 
-      console.log('Generando PDF con datos:', ticketData);
-      const pdfDataUrl = generatePOSTicketPDF(ticketData);
-      console.log('PDF generado, abriendo ventana...');
+      // Verificar si hay cobros parciales para esta mesa
+      const hasPartialPayments = allowPartialPayment && onPartialPayment && !isTicketWithoutTable;
       
-      const fileName = `ticket-mesa-${tableNumber}-${new Date().toISOString().slice(0, 10)}`;
-      
-      // Abrir PDF en nueva ventana/popup
-      openPDFInNewWindow(pdfDataUrl, fileName);
-      console.log('PDF abierto exitosamente');
+      if (hasPartialPayments) {
+        // Verificar si este es el pago final (no hay más cobros parciales pendientes)
+        const remainingAmount = effectiveTotal - parseFloat(cashReceived || '0');
+        if (remainingAmount <= 0) {
+          // Es el pago final, generar ticket con historial completo
+          console.log('Generando ticket final con historial de cobros parciales');
+          
+          const finalTicketData = {
+            ...ticketData,
+            // Información de cobros parciales
+            partialPayments: partialPayments,
+            totalPartialPayments: totalPartialPayments
+          };
+          
+          const pdfDataUrl = generatePOSTicketPDF(finalTicketData);
+          const fileName = `ticket-final-mesa-${tableNumber}-${new Date().toISOString().slice(0, 10)}`;
+          openPDFInNewWindow(pdfDataUrl, fileName);
+        } else {
+          console.log('Es un cobro parcial, no generando ticket aquí. Se generará en el Dashboard con historial completo.');
+        }
+      } else {
+        console.log('Generando PDF con datos:', ticketData);
+        const pdfDataUrl = generatePOSTicketPDF(ticketData);
+        console.log('PDF generado, abriendo ventana...');
+        
+        const fileName = `ticket-mesa-${tableNumber}-${new Date().toISOString().slice(0, 10)}`;
+        
+        // Abrir PDF en nueva ventana/popup
+        openPDFInNewWindow(pdfDataUrl, fileName);
+        console.log('PDF abierto exitosamente');
+      }
       
     } catch (error) {
       console.error('Error generando ticket PDF:', error);
@@ -202,6 +295,57 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
 
   const handlePaymentComplete = async () => {
+    // Verificar si es un cobro parcial usando el campo "Cantidad Recibida"
+    const receivedAmount = parseFloat(cashReceived || '0');
+    
+    // Para tickets sin mesa, NO permitir pagos parciales
+    if (isTicketWithoutTable && receivedAmount < effectiveTotal) {
+      alert(`Para tickets sin mesa se requiere el pago completo de ${currencySymbol}${effectiveTotal.toFixed(2)}`);
+      return;
+    }
+    
+    const isPartialPayment = allowPartialPayment && onPartialPayment && receivedAmount < effectiveTotal && !isTicketWithoutTable;
+    
+    if (isPartialPayment) {
+      // Mostrar confirmación de cobro parcial
+      const pendingAmount = effectiveTotal - receivedAmount;
+      const confirmMessage = `¿Confirmar cobro parcial?\n\nMesa: ${tableNumber}\nMonto cobrado: ${currencySymbol}${receivedAmount.toFixed(2)}\nMonto pendiente: ${currencySymbol}${pendingAmount.toFixed(2)}\n\nLa cuenta quedará abierta con ${currencySymbol}${pendingAmount.toFixed(2)} pendientes por pagar.`;
+      
+      if (!confirm(confirmMessage)) {
+        return;
+      }
+      
+      // Generar recibo parcial
+      const partialReceiptData = {
+        orderItems: effectiveOrderItems,
+        tableNumber: effectiveTableNumber,
+        customerName: effectiveCustomerName,
+        subtotal: effectiveSubtotal,
+        tax: effectiveTax,
+        total: receivedAmount, // Solo el monto cobrado
+        paymentMethod: paymentMethod === 'balance' ? 'cash' : paymentMethod as 'cash' | 'card',
+        cashReceived: cashReceived || receivedAmount.toString(),
+        mergedTableNumber: mergedTableNumber,
+        selectedCustomer: selectedCustomer,
+        restaurantName: config.restaurantName,
+        currencySymbol: getCurrencySymbol(),
+        documentType: 'partial_receipt' as const
+      };
+      
+      try {
+        await generatePOSTicketPDF(partialReceiptData);
+        console.log('Recibo parcial generado');
+        
+        // Llamar al callback para registrar el cobro parcial
+        onPartialPayment(receivedAmount, paymentMethod === 'balance' ? 'cash' : paymentMethod as 'cash' | 'card');
+        
+        onClose();
+        return;
+      } catch (error) {
+        console.error('Error generando recibo parcial:', error);
+        return;
+      }
+    }
     
     // Verificar si es una recarga de saldo
     const rechargeData = localStorage.getItem('rechargeData');
@@ -383,10 +527,23 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                         id="useBalance"
                         checked={useBalance}
                         onChange={(e) => setUseBalance(e.target.checked)}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        disabled={rechargeData !== null}
+                        className={`w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 ${
+                          rechargeData !== null ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
                       />
-                      <label htmlFor="useBalance" className="text-sm font-medium text-blue-800">
+                      <label 
+                        htmlFor="useBalance" 
+                        className={`text-sm font-medium ${
+                          rechargeData !== null ? 'text-gray-500' : 'text-blue-800'
+                        }`}
+                      >
                         Usar saldo del cliente
+                        {rechargeData !== null && (
+                          <span className="block text-xs text-gray-400 mt-1">
+                            No disponible para recargas
+                          </span>
+                        )}
                       </label>
                     </div>
                     
@@ -442,12 +599,14 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               </div>
             )}
 
+
+
             {/* Totales */}
             <div className={`rounded-lg p-4 mb-6 ${isRefund ? 'bg-red-50 border-2 border-red-200' : 'bg-gray-50'}`}>
               <div className="space-y-2">
                 <div className="flex justify-between">
                   <span>Subtotal (sin IVA):</span>
-                  <span className={isRefund ? 'text-red-700' : ''}>{isRefund && subtotal < 0 ? '-' : ''}{currencySymbol}{formatPrice(Math.abs(subtotal))}</span>
+                  <span className={isRefund ? 'text-red-700' : ''}>{isRefund && effectiveSubtotal < 0 ? '-' : ''}{currencySymbol}{formatPrice(Math.abs(effectiveSubtotal))}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>IVA (21%):</span>
@@ -456,7 +615,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                 <div className="flex justify-between text-lg font-semibold border-t pt-2">
                   <span>TOTAL (IVA incl.):</span>
                   <span className={`${isRefund ? 'text-red-700 font-bold' : 'text-primary-600'}`}>
-                    {isRefund && total < 0 ? '-' : ''}{currencySymbol}{formatPrice(Math.abs(total))}
+                    {isRefund && effectiveTotal < 0 ? '-' : ''}{currencySymbol}{formatPrice(Math.abs(effectiveTotal))}
                   </span>
                 </div>
                 {useBalance && hasCustomerBalance && (
@@ -522,21 +681,33 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   {useBalance ? 'Cantidad Recibida (Resto)' : 'Cantidad Recibida'}
                 </label>
-                <input
-                  type="number"
-                  value={useBalance ? remainingCashReceived : cashReceived}
-                  onChange={(e) => useBalance ? setRemainingCashReceived(e.target.value) : setCashReceived(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  placeholder="0.00"
-                  step="0.01"
-                  min={useBalance ? remainingAmount : total}
-                />
+                <button
+                  onClick={() => openNumericKeypad(useBalance ? 'remaining' : 'cash')}
+                  className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-left bg-white hover:bg-gray-50 transition-colors"
+                >
+                  <span className={useBalance ? (remainingCashReceived ? 'text-gray-900' : 'text-gray-500') : (cashReceived ? 'text-gray-900' : 'text-gray-500')}>
+                    {useBalance ? (remainingCashReceived || '0.00') : (cashReceived || '0.00')}
+                  </span>
+                  <span className="text-gray-400 ml-2">€</span>
+                </button>
                 {parseFloat(useBalance ? remainingCashReceived : cashReceived) > 0 && (
                   <div className="mt-2 text-sm">
                     <span className="text-gray-600">Cambio: </span>
                     <span className={`font-semibold ${(useBalance ? remainingChange : change) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {currencySymbol}{(useBalance ? remainingChange : change).toFixed(2)}
                     </span>
+                  </div>
+                )}
+                {/* Indicación de cobro parcial */}
+                {!useBalance && cashReceived && parseFloat(cashReceived) < total && !isTicketWithoutTable && (
+                  <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-yellow-800 text-xs">
+                    ⚠️ Cobro parcial: Quedarán {currencySymbol}{(total - parseFloat(cashReceived)).toFixed(2)} pendientes
+                  </div>
+                )}
+                {/* Advertencia para tickets sin mesa */}
+                {!useBalance && cashReceived && parseFloat(cashReceived) < total && isTicketWithoutTable && (
+                  <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-red-800 text-xs">
+                    ❌ Se requiere el pago completo de {currencySymbol}{total.toFixed(2)}
                   </div>
                 )}
               </div>
@@ -557,10 +728,10 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               <button
                 onClick={handlePaymentComplete}
                 disabled={
-                  // Pago normal sin saldo: validar efectivo
-                  (!useBalance && paymentMethod === 'cash' && (parseFloat(cashReceived) < total || !cashReceived)) ||
-                  // Pago con saldo pero hay monto restante en efectivo: validar efectivo restante
-                  (useBalance && remainingAmount > 0 && remainingPaymentMethod === 'cash' && (parseFloat(remainingCashReceived) < remainingAmount || !remainingCashReceived))
+                  // Solo validar que haya un monto introducido, permitir cobros parciales
+                  (!useBalance && paymentMethod === 'cash' && !cashReceived) ||
+                  // Pago con saldo pero hay monto restante en efectivo: validar que haya monto
+                  (useBalance && remainingAmount > 0 && remainingPaymentMethod === 'cash' && !remainingCashReceived)
                 }
                 className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white py-4 px-6 rounded-lg flex items-center justify-center space-x-2 font-semibold text-lg transition-colors disabled:cursor-not-allowed"
               >
@@ -577,6 +748,16 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Teclado numérico */}
+      {showNumericKeypad && editingAmountFor && (
+        <NumericKeypad
+          value={editingAmountFor === 'cash' ? parseFloat(cashReceived || '0') : parseFloat(remainingCashReceived || '0')}
+          onConfirm={handleAmountConfirm}
+          onCancel={handleAmountCancel}
+          currencySymbol={currencySymbol}
+        />
+      )}
     </div>
   );
 };

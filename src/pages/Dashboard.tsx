@@ -36,6 +36,7 @@ import TransferAccountModal from '../components/TransferAccountModal';
 import { calculateTotalBase, calculateTotalVAT, calculateTotalWithVAT, formatPrice } from '../utils/taxUtils';
 import { ProductTariff } from '../types/product';
 import { db } from '../database/db';
+import { generatePOSTicketPDF } from '../utils/pdfGenerator';
 
 interface OrderItem {
   productId: string;
@@ -98,10 +99,10 @@ const Dashboard: React.FC = () => {
     newTax?: number; 
   } | null>(null);
   
-  const { addOrderToTable, getTableOrderItems, clearTableOrder, tables, removeNamedAccount, addNamedAccount, updateTableStatus, salons } = useTables();
-  const { getCurrencySymbol, getTaxRate, getModifiersForCategory } = useConfig();
+  const { addOrderToTable, getTableOrderItems, clearTableOrder, tables, removeNamedAccount, addNamedAccount, updateTableStatus, salons, addPartialPayment, getPartialPayments, getTotalPartialPayments, clearPartialPayments, updateTableTotalAfterPartialPayment } = useTables();
+  const { getCurrencySymbol, getTaxRate, getModifiersForCategory, config } = useConfig();
   const { products, categories } = useProducts();
-  const { customers, updateCustomer } = useCustomers();
+  const { customers, updateCustomer, getCustomerByCardCode } = useCustomers();
   const { incentives } = useBalanceIncentives();
 
   // Solo productos activos
@@ -117,11 +118,18 @@ const Dashboard: React.FC = () => {
 
   // Funciones del carrito
   const addToOrder = (product: any, selectedTariff?: ProductTariff) => {
-    const existingItem = currentOrder.find(item => item.productId === product.id);
+    // Buscar producto existente por ID o por nombre (para manejar productos de cuentas por nombre)
+    const existingItem = currentOrder.find(item => 
+      item.productId === product.id || 
+      item.productName === product.name ||
+      item.productName === `${product.name}${selectedTariff ? ` - ${selectedTariff.name}` : ''}`
+    );
     
     if (existingItem) {
       setCurrentOrder(currentOrder.map(item =>
-        item.productId === product.id
+        (item.productId === product.id || 
+         item.productName === product.name ||
+         item.productName === `${product.name}${selectedTariff ? ` - ${selectedTariff.name}` : ''}`)
           ? { ...item, quantity: item.quantity + 1, totalPrice: (item.quantity + 1) * item.unitPrice }
           : item
       ));
@@ -176,6 +184,8 @@ const Dashboard: React.FC = () => {
     };
     loadForEdit();
   }, []);
+
+
 
   const clearEditingState = () => {
     // Limpiar estados de edición
@@ -527,8 +537,24 @@ const Dashboard: React.FC = () => {
       const tableOrderItems = getTableOrderItems(sourceTable.id);
       console.log('Productos encontrados en la mesa:', tableOrderItems);
       
+      // Si la mesa está vacía, solo crear/abrir la cuenta del cliente
       if (tableOrderItems.length === 0) {
-        toast.error('La mesa seleccionada no tiene productos para trasladar');
+        console.log('Mesa vacía - solo creando/abriendo cuenta del cliente');
+        
+        // Limpiar la mesa origen (liberarla)
+        console.log('Limpiando mesa origen:', sourceTable.id);
+        clearTableOrder(sourceTable.id);
+        updateTableStatus(sourceTable.id, 'available');
+        
+        toast.success(`Cuenta del cliente ${customer.name} ${customer.lastName} creada/abierta. Mesa ${sourceTable.number} liberada.`);
+        
+        // Limpiar el Dashboard después del traslado
+        setSelectedCustomer(null);
+        setSelectedTable(null);
+        setCurrentOrder([]);
+        
+        // Cerrar el modal
+        setShowTransferModal(false);
         return;
       }
 
@@ -675,9 +701,29 @@ const Dashboard: React.FC = () => {
     // Si la mesa está ocupada, cargar los pedidos existentes
     if (table.status === 'occupied') {
       const existingOrderItems = getTableOrderItems(table.id);
+
       if (existingOrderItems.length > 0) {
         setCurrentOrder(existingOrderItems);
-        toast.success(`Cargados ${existingOrderItems.length} productos de la mesa ${table.number}`);
+        
+        // Calcular el total pendiente considerando cobros parciales
+        const totalPartialPayments = getTotalPartialPayments(table.id);
+        const originalTotal = existingOrderItems.reduce((sum, item) => sum + item.totalPrice, 0);
+        const pendingTotal = originalTotal - totalPartialPayments;
+        
+        const isNamedAccount = table.id.startsWith('account-');
+        const message = isNamedAccount 
+          ? `Cargados ${existingOrderItems.length} productos de la cuenta de ${table.name}`
+          : `Cargados ${existingOrderItems.length} productos de la mesa ${table.number}`;
+        
+        // Mostrar mensaje adicional si hay cobros parciales
+        if (totalPartialPayments > 0) {
+          toast.success(`${message}. Total pendiente: ${getCurrencySymbol()}${pendingTotal.toFixed(2)} (ya cobrado: ${getCurrencySymbol()}${totalPartialPayments.toFixed(2)})`);
+        } else {
+          toast.success(message);
+        }
+      } else {
+        // Mesa ocupada pero sin productos, limpiar carrito
+        setCurrentOrder([]);
       }
     } else {
       // Si la mesa está disponible, limpiar el pedido actual
@@ -701,6 +747,19 @@ const Dashboard: React.FC = () => {
     const subtotal = calculateTotalBase(currentOrder);
     const tax = calculateTotalVAT(currentOrder);
     const total = calculateTotalWithVAT(currentOrder);
+    
+    // Si hay una mesa seleccionada, considerar cobros parciales
+    if (selectedTable) {
+      const totalPartialPayments = getTotalPartialPayments(selectedTable.id);
+      const pendingTotal = Math.max(0, total - totalPartialPayments);
+      
+      return {
+        subtotal,
+        tax,
+        total: pendingTotal // Retornar el total pendiente
+      };
+    }
+    
     return {
       subtotal,
       tax,
@@ -745,7 +804,8 @@ const Dashboard: React.FC = () => {
     }
 
     // Actualizar la mesa con el pedido y el cliente asignado
-    addOrderToTable(selectedTable.id, total, currentOrder, selectedCustomer);
+    // Usar replaceExisting: true para reemplazar completamente los productos existentes
+    addOrderToTable(selectedTable.id, total, currentOrder, selectedCustomer, true);
     
     // Mostrar mensaje de éxito
     if (selectedTable.id.startsWith('account-')) {
@@ -959,6 +1019,31 @@ const Dashboard: React.FC = () => {
         <div className="p-6 border-b border-gray-200/50 bg-gradient-to-r from-blue-50 to-indigo-50">
           {/* Selección de mesa y cliente */}
           <div className="space-y-2">
+            {/* Campo para escanear código de tarjeta */}
+            <div className="relative">
+            <input
+              type="text"
+                placeholder="🔍 Escanear código de tarjeta..."
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white shadow-sm transition-all duration-200 hover:shadow-md"
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter') {
+                    const cardCode = e.currentTarget.value.trim();
+                    if (cardCode) {
+                      const customer = getCustomerByCardCode(cardCode);
+                      if (customer) {
+                        setSelectedCustomer(customer);
+                        toast.success(`Cliente ${customer.name} ${customer.lastName} seleccionado por código de tarjeta`);
+                        e.currentTarget.value = '';
+                      } else {
+                        toast.error('No se encontró un cliente con ese código de tarjeta');
+                        e.currentTarget.value = '';
+                      }
+                    }
+                  }
+                }}
+              />
+            </div>
+            
             <CustomerSelector
               selectedCustomer={selectedCustomer}
               onCustomerSelect={setSelectedCustomer}
@@ -1002,12 +1087,20 @@ const Dashboard: React.FC = () => {
               >
                 <div className="flex items-center space-x-2">
                   <MapPin className="w-4 h-4 text-blue-500" />
+                  <div className="flex flex-col">
                   <span className={selectedTable ? 'text-gray-900' : 'text-gray-500'}>
                     {selectedTable 
                       ? `Mesa ${selectedTable.number}${selectedTable.name ? ` - ${selectedTable.name}` : ''}` 
                       : 'Seleccionar mesa'
                     }
                   </span>
+                    {/* Indicador de cobros parciales */}
+                    {selectedTable && getTotalPartialPayments(selectedTable.id) > 0 && (
+                      <span className="text-xs text-yellow-600 font-medium">
+                        ⚠️ Cobros parciales: {getCurrencySymbol()}{formatPrice(getTotalPartialPayments(selectedTable.id))}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 {selectedTable && (
                   <div className={`w-3 h-3 rounded-full ${
@@ -1064,40 +1157,40 @@ const Dashboard: React.FC = () => {
                     
                     {/* Precio unitario */}
                     <div className="flex-shrink-0">
-                      <button
-                        onClick={() => togglePriceEdit(item.productId)}
+                        <button
+                          onClick={() => togglePriceEdit(item.productId)}
                         className={`text-base font-semibold hover:underline cursor-pointer flex items-center ${
-                          item.unitPrice !== products.find(p => p.id === item.productId)?.price
+                            item.unitPrice !== products.find(p => p.id === item.productId)?.price
                             ? 'text-blue-600'
                             : 'text-gray-700'
-                        }`}
-                        title="Haz clic para editar el precio (IVA incluido)"
-                      >
+                          }`}
+                          title="Haz clic para editar el precio (IVA incluido)"
+                        >
                         {getCurrencySymbol()}{formatPrice(item.unitPrice)} c/u
                         <DollarSign className="w-4 h-4 ml-1 opacity-50" />
-                      </button>
+                        </button>
                     </div>
                     
                     {/* Botón modificadores */}
                     <div className="flex-shrink-0">
-                      <button
-                        onClick={() => openModifiersForItem(item.productId)}
-                        className="text-xs text-gray-500 hover:text-blue-600 px-2 py-1 rounded hover:bg-blue-50"
-                        title="Añadir modificadores"
-                      >
-                        Mods
-                      </button>
-                      {item.unitPrice !== products.find(p => p.id === item.productId)?.price && (
                         <button
-                          onClick={() => resetToOriginalPrice(item.productId)}
-                          className="text-xs text-gray-400 hover:text-blue-600 p-1 rounded hover:bg-blue-50 ml-1"
-                          title="Restaurar precio original"
+                          onClick={() => openModifiersForItem(item.productId)}
+                          className="text-xs text-gray-500 hover:text-blue-600 px-2 py-1 rounded hover:bg-blue-50"
+                          title="Añadir modificadores"
                         >
-                          ↺
+                        Mods
                         </button>
-                      )}
-                    </div>
-                    
+                        {item.unitPrice !== products.find(p => p.id === item.productId)?.price && (
+                          <button
+                            onClick={() => resetToOriginalPrice(item.productId)}
+                          className="text-xs text-gray-400 hover:text-blue-600 p-1 rounded hover:bg-blue-50 ml-1"
+                            title="Restaurar precio original"
+                          >
+                            ↺
+                          </button>
+                        )}
+                  </div>
+                  
                     {/* Controles de cantidad */}
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button
@@ -1122,9 +1215,9 @@ const Dashboard: React.FC = () => {
                       {item.modifiers.map((m, idx) => (
                         <span key={idx} className="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-600 rounded">
                           {m}
-                        </span>
+                    </span>
                       ))}
-                    </div>
+                  </div>
                   )}
                 </div>
               ))}
@@ -1145,6 +1238,25 @@ const Dashboard: React.FC = () => {
                   <span>IVA (21%):</span>
                   <span>{getCurrencySymbol()}{formatPrice(tax)}</span>
                 </div>
+                
+                {/* Información de cobros parciales */}
+                {selectedTable && getTotalPartialPayments(selectedTable.id) > 0 && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 space-y-2">
+                    <div className="flex justify-between text-sm text-yellow-800">
+                      <span className="font-medium">Total original:</span>
+                      <span>{getCurrencySymbol()}{formatPrice(total + getTotalPartialPayments(selectedTable.id))}</span>
+                    </div>
+                    <div className="flex justify-between text-sm text-yellow-700">
+                      <span>Ya cobrado:</span>
+                      <span className="font-medium">{getCurrencySymbol()}{formatPrice(getTotalPartialPayments(selectedTable.id))}</span>
+                    </div>
+                    <div className="flex justify-between text-sm text-yellow-800 font-semibold border-t border-yellow-300 pt-1">
+                      <span>Pendiente por cobrar:</span>
+                      <span>{getCurrencySymbol()}{formatPrice(total)}</span>
+                    </div>
+                  </div>
+                )}
+                
                 <div className="flex justify-between text-xl font-bold border-t pt-3 border-gray-300">
                   <span className="text-gray-800">Total (IVA incl.):</span>
                   <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">{getCurrencySymbol()}{formatPrice(total)}</span>
@@ -1177,13 +1289,13 @@ const Dashboard: React.FC = () => {
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={processOrder}
+                <button
+                  onClick={processOrder}
                     className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-3 px-4 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 text-sm"
-                  >
+                >
                     <Receipt className="w-4 h-4" />
                     <span>Procesar</span>
-                  </button>
+                </button>
                 </div>
               )}
               
@@ -1222,15 +1334,15 @@ const Dashboard: React.FC = () => {
                    </button>
                    
                    {/* Botón Vaciar */}
-                   {selectedTable && (
-                     <button
-                       onClick={clearTableCompleteOrder}
+                    {selectedTable && (
+                      <button
+                        onClick={clearTableCompleteOrder}
                        className="bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white py-3 px-4 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 text-sm"
-                     >
+                      >
                        <Trash2 className="w-4 h-4" />
                        <span>Vaciar</span>
-                     </button>
-                   )}
+                      </button>
+                    )}
                  </div>
                ) : null}
             </div>
@@ -1252,6 +1364,17 @@ const Dashboard: React.FC = () => {
        <PaymentModal
          isOpen={isPaymentModalOpen}
          onClose={() => setIsPaymentModalOpen(false)}
+         allowPartialPayment={!selectedCustomer && selectedTable && !isTicketWithoutTable ? selectedTable.status === 'occupied' : false}
+         partialPayments={selectedTable && !isTicketWithoutTable ? getPartialPayments(selectedTable.id) : []}
+         totalPartialPayments={selectedTable && !isTicketWithoutTable ? getTotalPartialPayments(selectedTable.id) : 0}
+         isTicketWithoutTable={isTicketWithoutTable}
+         onPartialPayment={selectedTable && !isTicketWithoutTable ? (amount, paymentMethod) => {
+           // Registrar el cobro parcial
+           addPartialPayment(selectedTable!.id, amount, paymentMethod);
+           // Actualizar el total de la mesa restando el cobro parcial
+           updateTableTotalAfterPartialPayment(selectedTable!.id, amount);
+           toast.success(`Cobro parcial de ${getCurrencySymbol()}${amount.toFixed(2)} registrado`);
+         } : undefined}
          onPaymentComplete={async () => {
            // Si estamos cobrando una diferencia de ticket editado, ahora SÍ guardamos
            if (tempDiffForPayment && editOrderId) {
@@ -1284,6 +1407,12 @@ const Dashboard: React.FC = () => {
                                                } else {
                // Cobro normal de mesa o ticket sin mesa - limpiar el dashboard
                if (selectedTable) {
+                 // Limpiar cobros parciales si es el pago final
+                 const partialPayments = getPartialPayments(selectedTable.id);
+                 if (partialPayments.length > 0) {
+                   clearPartialPayments(selectedTable.id);
+                 }
+                 
                  // Limpiar el pedido de la mesa
                  clearTableOrder(selectedTable.id);
                  
@@ -1297,14 +1426,14 @@ const Dashboard: React.FC = () => {
                  // Abrir modal de mesas para seleccionar nueva mesa
                  setIsTableModalOpen(true);
                  
-                                   // Verificar si la mesa estaba unida para mostrar un mensaje más específico
-                  if (selectedTable.mergedWith) {
-                    toast.success(`Cuenta de mesas unidas cobrada exitosamente. Las mesas han sido liberadas y desunidas. Selecciona una nueva mesa.`);
-                  } else if (selectedTable.id.startsWith('account-')) {
-                    toast.success(`Cuenta de ${selectedTable.name} cobrada y cerrada exitosamente. Selecciona una nueva mesa.`);
-                  } else {
-                    toast.success(`Mesa ${selectedTable.number} cobrada y liberada exitosamente. Selecciona una nueva mesa.`);
-                  }
+                 // Verificar si la mesa estaba unida para mostrar un mensaje más específico
+                 if (selectedTable.mergedWith) {
+                   toast.success(`Cuenta de mesas unidas cobrada exitosamente. Las mesas han sido liberadas y desunidas. Selecciona una nueva mesa.`);
+                 } else if (selectedTable.id.startsWith('account-')) {
+                   toast.success(`Cuenta de ${selectedTable.name} cobrada y cerrada exitosamente. Selecciona una nueva mesa.`);
+                 } else {
+                   toast.success(`Mesa ${selectedTable.number} cobrada y liberada exitosamente. Selecciona una nueva mesa.`);
+                 }
                } else if (isTicketWithoutTable) {
                  // Cobro de ticket sin mesa
                  setCurrentOrder([]);

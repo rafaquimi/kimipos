@@ -6,6 +6,7 @@ import DecorItem from '../Decor/DecorItem';
 import TableConnections from './TableConnections';
 import { useTables } from '../../contexts/TableContext';
 import { useCustomers } from '../../contexts/CustomerContext';
+import CustomerSelector from '../CustomerSelector';
 import toast from 'react-hot-toast';
 
 interface TableSelectorModalProps {
@@ -36,7 +37,7 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   
   const { salons, activeSalonId, setActiveSalon, tables, decor, updateTableTemporaryName, updateTableStatus, addNamedAccount } = useTables();
-  const { customers } = useCustomers();
+  const { customers, getCustomerByCardCode } = useCustomers();
   const navigate = useNavigate();
 
   // Limpiar estado del modal de nombre cuando se cierre el modal principal
@@ -544,6 +545,33 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
                   </div>
                 )}
 
+                {/* Campo para escanear código de tarjeta */}
+                {!selectedCustomer && (
+                  <div className="mb-4">
+                    <input
+                      type="text"
+                      placeholder="🔍 Escanear código de tarjeta..."
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white shadow-sm transition-all duration-200 hover:shadow-md"
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          const cardCode = e.currentTarget.value.trim();
+                          if (cardCode) {
+                            const customer = getCustomerByCardCode(cardCode);
+                            if (customer) {
+                              setSelectedCustomer(customer);
+                              toast.success(`Cliente ${customer.name} ${customer.lastName} seleccionado por código de tarjeta`);
+                              e.currentTarget.value = '';
+                            } else {
+                              toast.error('No se encontró un cliente con ese código de tarjeta');
+                              e.currentTarget.value = '';
+                            }
+                          }
+                        }
+                      }}
+                    />
+                  </div>
+                )}
+
                 {/* Botón para seleccionar cliente existente */}
                 {!selectedCustomer && (
                   <div className="mb-4">
@@ -627,38 +655,14 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
                 </button>
               </div>
               
-              <div className="max-h-64 overflow-y-auto space-y-2">
-                {customers.length === 0 ? (
-                  <p className="text-center text-gray-500 py-4">
-                    No hay clientes registrados
-                  </p>
-                ) : (
-                  customers.map((customer) => (
-                    <button
-                      key={customer.id}
-                      onClick={() => {
-                        setSelectedCustomer(customer);
-                        setShowCustomerSelector(false);
-                      }}
-                      className="w-full p-3 text-left border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors"
-                    >
-                      <div className="font-medium text-gray-900">
-                        {customer.name} {customer.lastName}
-                      </div>
-                      {customer.email && (
-                        <div className="text-sm text-gray-600">
-                          {customer.email}
-                        </div>
-                      )}
-                      {customer.balance > 0 && (
-                        <div className="text-sm text-green-600 font-medium">
-                          Saldo: €{customer.balance.toFixed(2)}
-                        </div>
-                      )}
-                    </button>
-                  ))
-                )}
-              </div>
+              <CustomerSelector
+                selectedCustomer={selectedCustomer}
+                onCustomerSelect={(customer) => {
+                  setSelectedCustomer(customer);
+                  setShowCustomerSelector(false);
+                }}
+                placeholder="Buscar cliente por nombre, email, teléfono o código de tarjeta..."
+              />
             </div>
           </div>
         </div>
