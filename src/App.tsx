@@ -16,6 +16,7 @@ import { ConfigProvider } from './contexts/ConfigContext';
 import { ProductProvider } from './contexts/ProductContext';
 import { CustomerProvider } from './contexts/CustomerContext';
 import { BalanceIncentiveProvider } from './contexts/BalanceIncentiveContext';
+import { ClosedTicketsProvider } from './contexts/ClosedTicketsContext';
 import { OnScreenKeyboardProvider } from './contexts/OnScreenKeyboardContext';
 import OnScreenKeyboard from './components/OnScreenKeyboard/OnScreenKeyboard';
 
@@ -55,56 +56,59 @@ const App: React.FC = () => {
     <DatabaseProvider>
       <ConfigProvider>
         <ProductProvider>
-                  <CustomerProvider>
-          <BalanceIncentiveProvider>
-            <TableProvider>
-              <OnScreenKeyboardProvider>
-              <HashRouter>
-                <Layout>
-                  <Routes>
-                    <Route path="/" element={<Dashboard />} />
-                    <Route path="/products" element={<Products />} />
-                    <Route path="/categories" element={<Categories />} />
-                    <Route path="/tables" element={<Tables />} />
-                    <Route path="/orders" element={<Orders />} />
-                    <Route path="/modifiers" element={<ModifiersPage />} />
-                    <Route path="/configuration" element={<ConfigurationPage />} />
-                    <Route path="/configuration/salons" element={<ConfigurationPage />} />
-                    <Route path="/customers" element={<ConfigurationPage />} />
-            <Route path="/configuration/incentives" element={<ConfigurationPage />} />
-                    <Route path="/reports" element={<ConfigurationPage />} />
-                    <Route path="/invoices" element={<ConfigurationPage />} />
-                  </Routes>
-                  <Toaster
-                    position="top-right"
-                    toastOptions={{
-                      duration: 4000,
-                      style: {
-                        background: '#363636',
-                        color: '#fff',
-                      },
-                      success: {
-                        style: {
-                          background: '#10b981',
-                        },
-                      },
-                      error: {
-                        style: {
-                          background: '#ef4444',
-                        },
-                      },
-                    }}
-                  />
-                  <OnScreenKeyboard />
-                </Layout>
-              </HashRouter>
-            </OnScreenKeyboardProvider>
-                      </TableProvider>
-          </BalanceIncentiveProvider>
+          <CustomerProvider>
+            <BalanceIncentiveProvider>
+              <ClosedTicketsProvider>
+                <TableProvider>
+                  <OnScreenKeyboardProvider>
+                    <HashRouter>
+                      <Layout>
+                        <Routes>
+                          <Route path="/" element={<Dashboard />} />
+                          <Route path="/products" element={<Products />} />
+                          <Route path="/categories" element={<Categories />} />
+                          <Route path="/tables" element={<Tables />} />
+                          <Route path="/orders" element={<Orders />} />
+                          <Route path="/modifiers" element={<ModifiersPage />} />
+                          <Route path="/configuration" element={<ConfigurationPage />} />
+                          <Route path="/configuration/salons" element={<ConfigurationPage />} />
+                          <Route path="/customers" element={<ConfigurationPage />} />
+                          <Route path="/configuration/incentives" element={<ConfigurationPage />} />
+                          <Route path="/configuration/tickets" element={<ConfigurationPage />} />
+                          <Route path="/reports" element={<ConfigurationPage />} />
+                          <Route path="/invoices" element={<ConfigurationPage />} />
+                        </Routes>
+                        <Toaster
+                          position="top-right"
+                          toastOptions={{
+                            duration: 4000,
+                            style: {
+                              background: '#363636',
+                              color: '#fff',
+                            },
+                            success: {
+                              style: {
+                                background: '#10b981',
+                              },
+                            },
+                            error: {
+                              style: {
+                                background: '#ef4444',
+                              },
+                            },
+                          }}
+                        />
+                        <OnScreenKeyboard />
+                      </Layout>
+                    </HashRouter>
+                  </OnScreenKeyboardProvider>
+                </TableProvider>
+              </ClosedTicketsProvider>
+            </BalanceIncentiveProvider>
           </CustomerProvider>
-      </ProductProvider>
-    </ConfigProvider>
-  </DatabaseProvider>
+        </ProductProvider>
+      </ConfigProvider>
+    </DatabaseProvider>
   );
 };
 

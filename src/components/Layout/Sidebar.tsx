@@ -12,7 +12,8 @@ import {
   BarChart3,
   Receipt,
   SlidersHorizontal,
-  Gift
+  Gift,
+  Archive
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -71,6 +72,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       href: '/configuration/incentives',
       icon: Gift,
       description: 'Configuración de incentivos'
+    },
+    {
+      name: 'Documentos Cerrados',
+      href: '/configuration/tickets',
+      icon: Archive,
+      description: 'Historial de tickets, recargas y recibos'
     },
     {
       name: 'Reportes',

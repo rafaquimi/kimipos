@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { X, Receipt, CreditCard, DollarSign, Printer } from 'lucide-react';
+import { X, Receipt, CreditCard, DollarSign, Printer, User } from 'lucide-react';
 import { useConfig } from '../../contexts/ConfigContext';
 import { useCustomers } from '../../contexts/CustomerContext';
 import { db } from '../../database/db';
 import { formatPrice } from '../../utils/taxUtils';
 import { generatePOSTicketPDF, openPDFInNewWindow, calculateTaxBreakdown } from '../../utils/pdfGenerator';
+import { getNextTicketId, formatTicketId } from '../../utils/ticketIdGenerator';
+import { getNextReceiptId, formatReceiptId } from '../../utils/receiptIdGenerator';
+import { useClosedTickets } from '../../contexts/ClosedTicketsContext';
 import IntegratedNumericKeypad from './IntegratedNumericKeypad';
 import ChangePopup from './ChangePopup';
 
@@ -82,7 +85,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const [changeAmount, setChangeAmount] = useState(0);
   
   const { getCurrencySymbol, config } = useConfig();
-  const { refreshCustomers } = useCustomers();
+  const { refreshCustomers, updateCustomer } = useCustomers();
+  const { addClosedTicket } = useClosedTickets();
 
   const currencySymbol = getCurrencySymbol();
   const isRefund = total < 0;
@@ -100,6 +104,21 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   let effectiveTotal = total;
   let effectiveCustomerName = customerName;
   let effectiveTableNumber = tableNumber;
+  let effectiveTicketId: string | undefined;
+
+  // Si es una recarga, usar los datos del localStorage
+  if (rechargeData && isTicketWithoutTable) {
+    try {
+      const parsedRechargeData = JSON.parse(rechargeData);
+      effectiveOrderItems = parsedRechargeData.orderItems || orderItems;
+      effectiveSubtotal = parsedRechargeData.subtotal || subtotal;
+      effectiveTax = parsedRechargeData.tax || tax;
+      effectiveTotal = parsedRechargeData.total || total;
+      effectiveTicketId = parsedRechargeData.ticketId;
+    } catch (error) {
+      console.error('Error parsing recharge data:', error);
+    }
+  }
 
   // Calcular el subtotal real basado en los productos
   const calculateRealSubtotal = (items: any[]) => {
@@ -183,6 +202,9 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       
       const partialTaxBreakdown = calculateTaxBreakdown(effectiveOrderItems);
       
+      // Generar ID del recibo parcial
+      const partialReceiptId = formatTicketId(getNextTicketId());
+      
       const partialReceiptData = {
         orderItems: effectiveOrderItems,
         tableNumber: effectiveTableNumber,
@@ -198,7 +220,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         restaurantName: config.businessData?.commercialName || 'Restaurante',
         currencySymbol: getCurrencySymbol(),
         documentType: 'partial_receipt' as const,
-        taxBreakdown: partialTaxBreakdown.length > 0 ? partialTaxBreakdown : undefined
+        taxBreakdown: partialTaxBreakdown.length > 0 ? partialTaxBreakdown : undefined,
+        ticketId: partialReceiptId
       };
       
       try {
@@ -228,8 +251,124 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       await new Promise(resolve => setTimeout(resolve, 4000));
     }
     
-    // Generar PDF y completar pago
+    // Si se usó saldo del cliente, generar recibo de pago con saldo
+    if (useBalance && selectedCustomer && balanceAmount > 0) {
+      try {
+        const newBalance = selectedCustomer.balance - balanceAmount;
+        await updateCustomer(selectedCustomer.id, {
+          ...selectedCustomer,
+          balance: newBalance
+        });
+        console.log(`Saldo actualizado para ${selectedCustomer.name}: ${selectedCustomer.balance} -> ${newBalance}`);
+        
+        // Generar recibo de pago con saldo
+        const balanceReceiptId = formatReceiptId(getNextReceiptId());
+        
+        const balanceReceiptData = {
+          orderItems: effectiveOrderItems,
+          tableNumber: effectiveTableNumber,
+          customerName: effectiveCustomerName,
+          subtotal: effectiveSubtotal,
+          tax: effectiveTax,
+          total: balanceAmount, // Solo el monto pagado con saldo
+          paymentMethod: 'balance' as const,
+          mergedTableNumber: mergedTableNumber,
+          selectedCustomer: selectedCustomer,
+          useBalance: true,
+          balanceAmount: balanceAmount,
+          remainingAmount: remainingAmount,
+          remainingPaymentMethod: remainingPaymentMethod,
+          restaurantName: config.businessData?.commercialName || 'Restaurante',
+          currencySymbol: getCurrencySymbol(),
+          documentType: 'balance_payment' as const,
+          taxBreakdown: calculateTaxBreakdown(effectiveOrderItems),
+          finalPaymentAmount: balanceAmount,
+          ticketId: balanceReceiptId
+        };
+        
+        const pdfDataUrl = generatePOSTicketPDF({
+          ...balanceReceiptData,
+          businessData: config.businessData
+        });
+        
+        const fileName = `recibo-saldo-${selectedCustomer.name}-${new Date().toISOString().slice(0, 10)}`;
+        openPDFInNewWindow(pdfDataUrl, fileName);
+        
+        // Guardar recibo de pago con saldo
+        const closedReceipt = {
+          id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          ...balanceReceiptData,
+          businessData: config.businessData,
+          closedAt: new Date()
+        };
+        addClosedTicket(closedReceipt);
+        
+        // Si hay monto restante, generar PDF adicional para esa parte
+        if (remainingAmount > 0) {
+          const remainingTicketId = formatTicketId(getNextTicketId());
+          
+          const remainingTicketData = {
+            orderItems: effectiveOrderItems,
+            tableNumber: effectiveTableNumber,
+            customerName: effectiveCustomerName,
+            subtotal: effectiveSubtotal,
+            tax: effectiveTax,
+            total: remainingAmount, // Solo el monto restante
+            paymentMethod: remainingPaymentMethod,
+            cashReceived: remainingPaymentMethod === 'cash' ? (remainingCashReceived || remainingAmount.toString()) : undefined,
+            cardAmount: remainingPaymentMethod === 'card' ? (remainingCardAmount || remainingAmount.toString()) : undefined,
+            mergedTableNumber: mergedTableNumber,
+            selectedCustomer: selectedCustomer,
+            useBalance: false,
+            balanceAmount: 0,
+            remainingAmount: 0,
+            remainingPaymentMethod: 'cash',
+            restaurantName: config.businessData?.commercialName || 'Restaurante',
+            currencySymbol: getCurrencySymbol(),
+            documentType: 'ticket' as const,
+            taxBreakdown: calculateTaxBreakdown(effectiveOrderItems),
+            finalPaymentAmount: remainingAmount,
+            ticketId: remainingTicketId
+          };
+          
+          const remainingPdfDataUrl = generatePOSTicketPDF({
+            ...remainingTicketData,
+            businessData: config.businessData
+          });
+          
+          const remainingFileName = `ticket-mesa-${tableNumber}-${new Date().toISOString().slice(0, 10)}`;
+          openPDFInNewWindow(remainingPdfDataUrl, remainingFileName);
+          
+          // Guardar ticket cerrado para el monto restante
+          const closedRemainingTicket = {
+            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            ...remainingTicketData,
+            businessData: config.businessData,
+            closedAt: new Date()
+          };
+          addClosedTicket(closedRemainingTicket);
+        }
+        
+        // Completar pago
+        onPaymentComplete();
+        onClose();
+        return;
+        
+      } catch (error) {
+        console.error('Error actualizando saldo del cliente:', error);
+        alert('Error al actualizar el saldo del cliente');
+        return;
+      }
+    }
+
+    // Generar PDF y completar pago (solo para pagos sin saldo o recargas)
     try {
+      // Usar ID existente o generar uno nuevo
+      const ticketId = effectiveTicketId || formatTicketId(getNextTicketId());
+      
+      // Determinar el tipo de documento
+      const isRecharge = rechargeData && isTicketWithoutTable;
+      
       const ticketData = {
         orderItems: effectiveOrderItems,
         tableNumber: effectiveTableNumber,
@@ -248,9 +387,10 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         remainingPaymentMethod: remainingPaymentMethod,
         restaurantName: config.businessData?.commercialName || 'Restaurante',
         currencySymbol: getCurrencySymbol(),
-        documentType: 'ticket' as const,
+        documentType: isRecharge ? 'recharge' as const : 'ticket' as const,
         taxBreakdown: calculateTaxBreakdown(effectiveOrderItems),
-        finalPaymentAmount: receivedAmount
+        finalPaymentAmount: receivedAmount,
+        ticketId: ticketId
       };
       
       const pdfDataUrl = generatePOSTicketPDF({
@@ -260,6 +400,15 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       
       const fileName = `ticket-mesa-${tableNumber}-${new Date().toISOString().slice(0, 10)}`;
       openPDFInNewWindow(pdfDataUrl, fileName);
+      
+      // Guardar ticket cerrado
+      const closedTicket = {
+        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        ...ticketData,
+        businessData: config.businessData,
+        closedAt: new Date()
+      };
+      addClosedTicket(closedTicket);
       
     } catch (error) {
       console.error('Error generando ticket PDF:', error);
@@ -323,6 +472,62 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                     })}
                   </div>
                 </div>
+
+                {/* Opción de usar saldo del cliente */}
+                {selectedCustomer && hasCustomerBalance && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center space-x-2">
+                        <User className="w-5 h-5 text-blue-600" />
+                        <span className="font-semibold text-blue-800">
+                          {selectedCustomer.name} {selectedCustomer.lastName}
+                        </span>
+                      </div>
+                      <span className="text-sm text-blue-600">
+                        Saldo: {currencySymbol}{customerBalance.toFixed(2)}
+                      </span>
+                    </div>
+                    
+                    <div className="flex items-center space-x-3">
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={useBalance}
+                          onChange={(e) => setUseBalance(e.target.checked)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        />
+                        <span className="text-sm font-medium text-blue-800">
+                          Usar saldo del cliente
+                        </span>
+                      </label>
+                    </div>
+                    
+                    {useBalance && (
+                      <div className="mt-3 p-3 bg-white rounded border border-blue-300">
+                        <div className="text-sm text-blue-700">
+                          <div className="flex justify-between mb-1">
+                            <span>Saldo disponible:</span>
+                            <span className="font-medium">{currencySymbol}{customerBalance.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between mb-1">
+                            <span>Total a pagar:</span>
+                            <span className="font-medium">{currencySymbol}{actualPendingAmount.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between font-semibold border-t pt-1">
+                            <span>Saldo a usar:</span>
+                            <span className="text-green-600">{currencySymbol}{balanceAmount.toFixed(2)}</span>
+                          </div>
+                          {remainingAmount > 0 && (
+                            <div className="flex justify-between font-semibold text-orange-600">
+                              <span>Restante por pagar:</span>
+                              <span>{currencySymbol}{remainingAmount.toFixed(2)}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Totales */}
                 <div className={`rounded-lg p-4 ${isRefund ? 'bg-red-50 border-2 border-red-200' : 'bg-gray-50'}`}>
@@ -417,8 +622,17 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                     }
                     className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white py-4 px-6 rounded-lg flex items-center justify-center space-x-2 font-semibold text-lg transition-colors disabled:cursor-not-allowed"
                   >
-                    <Printer className="w-5 h-5" />
-                    <span>Completar Cobro e Imprimir PDF</span>
+                    {useBalance ? (
+                      <>
+                        <Printer className="w-5 h-5" />
+                        <span>Completar Pago con Saldo e Imprimir Recibo</span>
+                      </>
+                    ) : (
+                      <>
+                        <Printer className="w-5 h-5" />
+                        <span>Completar Cobro e Imprimir PDF</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>

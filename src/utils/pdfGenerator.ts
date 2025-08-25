@@ -65,6 +65,8 @@ interface TicketData {
   };
   // Desglose de impuestos
   taxBreakdown?: TaxBreakdown[];
+  // ID del ticket
+  ticketId?: string;
 }
 
 export const generatePOSTicketPDF = (ticketData: TicketData): string => {
@@ -158,16 +160,21 @@ export const generatePOSTicketPDF = (ticketData: TicketData): string => {
       }
     }
     
+    // Espacio adicional antes del título del documento
+    yPosition += 15;
+    
     // Título del documento según el tipo
     doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
-    let documentTitle = 'TICKET';
+    let documentTitle = 'FACTURA SIMPLIFICADA';
     if (isRecharge) {
       documentTitle = 'RECARGA DE SALDO';
     } else if (isBalancePayment) {
       documentTitle = 'ALBARÁN';
     } else if (isPartialReceipt) {
       documentTitle = 'RECIBO PARCIAL';
+    } else if (ticketData.documentType === 'balance_payment') {
+      documentTitle = 'RECIBO DE PAGO CON SALDO';
     }
     
     const documentTitleWidth = doc.getTextWidth(documentTitle);
@@ -188,6 +195,16 @@ export const generatePOSTicketPDF = (ticketData: TicketData): string => {
     yPosition += 12;
     doc.text(`Hora: ${now.toLocaleTimeString('es-ES')}`, leftMargin, yPosition);
     yPosition += 12;
+    
+    // ID del ticket o recibo
+    if (ticketData.ticketId) {
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      const isReceipt = ticketData.documentType === 'balance_payment';
+      const label = isReceipt ? 'Recibo Nº:' : 'Factura Sim. Nº:';
+      doc.text(`${label} ${ticketData.ticketId}`, leftMargin, yPosition);
+      yPosition += 12;
+    }
     
     // Mostrar mesa solo si no es recarga
     if (!isRecharge) {
@@ -333,7 +350,7 @@ export const generatePOSTicketPDF = (ticketData: TicketData): string => {
       // Aviso
       doc.setFontSize(8);
       doc.setFont('helvetica', 'italic');
-      doc.text('Este es un recibo parcial. El ticket fiscal se generará al liquidar la cuenta completa.', leftMargin, yPosition);
+      doc.text('Este es un recibo parcial. La factura fiscal se generará al liquidar la cuenta completa.', leftMargin, yPosition);
       yPosition += 15;
     }
 

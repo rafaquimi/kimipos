@@ -6,6 +6,7 @@ import { useBalanceIncentives } from '../contexts/BalanceIncentiveContext';
 import { Customer } from '../contexts/CustomerContext';
 import BalanceRechargeModal from './BalanceRechargeModal';
 import PaymentModal from './Payment/PaymentModal';
+import { getNextTicketId, formatTicketId } from '../utils/ticketIdGenerator';
 import toast from 'react-hot-toast';
 
 interface CustomerSelectorModalProps {
@@ -104,6 +105,9 @@ const CustomerSelectorModal: React.FC<CustomerSelectorModalProps> = ({
   const handleOpenPaymentModal = (amount: number, bonus: number) => {
     if (!customerToRecharge) return;
     
+    // Generar ID para la recarga
+    const rechargeId = formatTicketId(getNextTicketId());
+    
     // Crear datos de recarga para el PaymentModal
     const rechargeOrderItems = [{
       productId: 'recharge',
@@ -122,7 +126,8 @@ const CustomerSelectorModal: React.FC<CustomerSelectorModalProps> = ({
       orderItems: rechargeOrderItems,
       subtotal: amount,
       tax: 0,
-      total: amount
+      total: amount,
+      ticketId: rechargeId
     }));
 
     // Cerrar modal de incentivos y abrir modal de cobro

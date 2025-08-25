@@ -12,6 +12,7 @@ import DecorItem from '../components/Decor/DecorItem';
 import CustomerModal from '../components/CustomerModal';
 import ConfirmationModal from '../components/ConfirmationModal';
 import BalanceIncentiveModal from '../components/BalanceIncentiveModal';
+import ClosedTicketsManager from '../components/ClosedTicketsManager';
 import toast from 'react-hot-toast';
 
 const ConfigurationPage: React.FC = () => {
@@ -49,6 +50,8 @@ const ConfigurationPage: React.FC = () => {
       setActiveSection('customers');
     } else if (location.pathname.includes('/configuration/incentives')) {
       setActiveSection('incentives');
+    } else if (location.pathname.includes('/configuration/tickets')) {
+      setActiveSection('tickets');
     } else {
       setActiveSection('general');
     }
@@ -835,6 +838,20 @@ const ConfigurationPage: React.FC = () => {
     );
   };
 
+  const renderTickets = () => {
+    return (
+      <div className="space-y-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="mb-6">
+            <h2 className="text-xl font-semibold text-gray-900">Tickets Cerrados</h2>
+            <p className="text-gray-600 mt-1">Historial de todos los tickets cobrados</p>
+          </div>
+          <ClosedTicketsManager />
+        </div>
+      </div>
+    );
+  };
+
   const renderSalons = () => {
     const activeSalon = salons.find(s => s.id === activeSalonId);
 
@@ -991,6 +1008,9 @@ const ConfigurationPage: React.FC = () => {
         )}
         {activeSection === 'incentives' && (
           <div className="h-full overflow-y-auto p-6">{renderIncentives()}</div>
+        )}
+        {activeSection === 'tickets' && (
+          <div className="h-full overflow-y-auto p-6">{renderTickets()}</div>
         )}
         {activeSection === 'salons' && (
           <div className="h-full">{renderSalons()}</div>
