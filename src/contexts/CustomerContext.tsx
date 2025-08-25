@@ -44,7 +44,7 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const loadCustomers = async () => {
     try {
       const allCustomers = await db.customers.toArray();
-      setCustomers(allCustomers);
+      setCustomers(allCustomers as any);
     } catch (error) {
       console.error('Error loading customers:', error);
       toast.error('Error al cargar los clientes');

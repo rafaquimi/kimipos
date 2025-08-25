@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, RotateCcw } from 'lucide-react';
 
 interface NumericKeypadProps {
@@ -16,9 +16,19 @@ const NumericKeypad: React.FC<NumericKeypadProps> = ({
 }) => {
   const [displayValue, setDisplayValue] = useState(value.toString());
 
+  // Sincronizar displayValue con el prop value cuando cambie
+  useEffect(() => {
+    setDisplayValue(value.toString());
+  }, [value]);
+
   const handleNumberClick = (num: string) => {
-    if (displayValue === '0' && num !== '.') {
-      setDisplayValue(num);
+    // Si el valor actual es 0 o es el valor inicial, reemplazar en lugar de concatenar
+    if (displayValue === '0' || displayValue === value.toString()) {
+      if (num === '.') {
+        setDisplayValue('0.');
+      } else {
+        setDisplayValue(num);
+      }
     } else if (num === '.' && displayValue.includes('.')) {
       // No permitir múltiples puntos decimales
       return;

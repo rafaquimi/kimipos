@@ -12,7 +12,8 @@ import {
   MapPin,
   DollarSign,
   Link2,
-  X
+  X,
+  Settings
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import TableSelectorModal from '../components/Table/TableSelectorModal';
@@ -31,12 +32,13 @@ import { useCustomers, Customer } from '../contexts/CustomerContext';
 import { useBalanceIncentives } from '../contexts/BalanceIncentiveContext';
 import CustomerSelector from '../components/CustomerSelector';
 import CustomerModal from '../components/CustomerModal';
-import BalanceRechargeModal from '../components/BalanceRechargeModal';
 import TransferAccountModal from '../components/TransferAccountModal';
+import CustomerSelectorModal from '../components/CustomerSelectorModal';
 import { calculateTotalBase, calculateTotalVAT, calculateTotalWithVAT, formatPrice } from '../utils/taxUtils';
 import { ProductTariff } from '../types/product';
 import { db } from '../database/db';
 import { generatePOSTicketPDF } from '../utils/pdfGenerator';
+import { useNavigate } from 'react-router-dom';
 
 interface OrderItem {
   productId: string;
@@ -46,9 +48,12 @@ interface OrderItem {
   totalPrice: number;
   status: string;
   modifiers?: string[];
+  taxRate?: number;
+  taxName?: string;
 }
 
 const Dashboard: React.FC = () => {
+  const navigate = useNavigate();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentOrder, setCurrentOrder] = useState<OrderItem[]>([]);
@@ -85,9 +90,10 @@ const Dashboard: React.FC = () => {
   // Modal para recargar saldo
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [customerToEdit, setCustomerToEdit] = useState<Customer | null>(null);
-  const [showBalanceRechargeModal, setShowBalanceRechargeModal] = useState(false);
   // Modal de traslado de cuenta
   const [showTransferModal, setShowTransferModal] = useState(false);
+  // Modal de selección de clientes
+  const [showCustomerSelectorModal, setShowCustomerSelectorModal] = useState(false);
   // Edición de tickets (desde Pedidos)
   const [editOrderId, setEditOrderId] = useState<number | null>(null);
   const [originalTotalForEdit, setOriginalTotalForEdit] = useState<number | null>(null);
@@ -135,6 +141,26 @@ const Dashboard: React.FC = () => {
       ));
     } else {
       const tariff = selectedTariff || product.tariffs?.find((t: ProductTariff) => t.isDefault) || { price: product.price };
+      
+      // Obtener información del impuesto del producto
+      let taxRate = 0;
+      let taxName = 'IVA General';
+      
+      if (product.taxId) {
+        const tax = config.taxes.find(t => t.id === product.taxId);
+        if (tax) {
+          taxRate = tax.rate;
+          taxName = tax.name;
+        }
+      } else {
+        // Usar impuesto por defecto si no hay uno específico
+        const defaultTax = config.taxes.find(t => t.isDefault);
+        if (defaultTax) {
+          taxRate = defaultTax.rate;
+          taxName = defaultTax.name;
+        }
+      }
+      
       const newItem: OrderItem = {
         productId: product.id,
         productName: `${product.name}${selectedTariff ? ` - ${selectedTariff.name}` : ''}`,
@@ -142,7 +168,9 @@ const Dashboard: React.FC = () => {
         unitPrice: tariff.price,
         totalPrice: tariff.price,
         status: 'pending',
-        modifiers: []
+        modifiers: [],
+        taxRate: taxRate,
+        taxName: taxName
       };
       setCurrentOrder([...currentOrder, newItem]);
     }
@@ -160,15 +188,39 @@ const Dashboard: React.FC = () => {
       try {
         const order = await db.orders.get(Number(editOrderId));
         if (order) {
-          const items = order.items.map((it: any, idx: number) => ({
-            productId: String(it.productId ?? `edit-${idx}`),
-            productName: it.productName || `Producto ${idx+1}`,
-            quantity: it.quantity || 1,
-            unitPrice: it.unitPrice || 0,
-            totalPrice: it.totalPrice || 0,
-            status: 'pending' as const,
-            modifiers: [] as string[]
-          }));
+          const items = order.items.map((it: any, idx: number) => {
+            // Buscar el producto para obtener información de impuestos
+            const product = products.find(p => p.id === it.productId);
+            let taxRate = 0;
+            let taxName = 'IVA General';
+            
+            if (product && product.taxId) {
+              const tax = config.taxes.find(t => t.id === product.taxId);
+              if (tax) {
+                taxRate = tax.rate;
+                taxName = tax.name;
+              }
+            } else {
+              // Usar impuesto por defecto si no hay uno específico
+              const defaultTax = config.taxes.find(t => t.isDefault);
+              if (defaultTax) {
+                taxRate = defaultTax.rate;
+                taxName = defaultTax.name;
+              }
+            }
+            
+            return {
+              productId: String(it.productId ?? `edit-${idx}`),
+              productName: it.productName || `Producto ${idx+1}`,
+              quantity: it.quantity || 1,
+              unitPrice: it.unitPrice || 0,
+              totalPrice: it.totalPrice || 0,
+              status: 'pending' as const,
+              modifiers: [] as string[],
+              taxRate: taxRate,
+              taxName: taxName
+            };
+          });
           setCurrentOrder(items);
           setEditOrderId(order.id || null);
           setOriginalTotalForEdit(order.total || 0);
@@ -293,6 +345,25 @@ const Dashboard: React.FC = () => {
       const productName = `${baseProduct.name} con ${combinationNames} - ${tariff.name}`;
       const totalPrice = tariff.price + additionalPrice;
 
+      // Obtener información del impuesto del producto base
+      let taxRate = 0;
+      let taxName = 'IVA General';
+      
+      if (baseProduct.taxId) {
+        const tax = config.taxes.find(t => t.id === baseProduct.taxId);
+        if (tax) {
+          taxRate = tax.rate;
+          taxName = tax.name;
+        }
+      } else {
+        // Usar impuesto por defecto si no hay uno específico
+        const defaultTax = config.taxes.find(t => t.isDefault);
+        if (defaultTax) {
+          taxRate = defaultTax.rate;
+          taxName = defaultTax.name;
+        }
+      }
+      
       const newItem: OrderItem = {
         productId: baseProduct.id,
         productName,
@@ -300,7 +371,9 @@ const Dashboard: React.FC = () => {
         unitPrice: totalPrice,
         totalPrice,
         status: 'pending',
-        modifiers: []
+        modifiers: [],
+        taxRate: taxRate,
+        taxName: taxName
       };
 
       setCurrentOrder([...currentOrder, newItem]);
@@ -467,13 +540,6 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // Función para abrir modal de recarga de saldo
-  const handleRechargeBalance = () => {
-    if (selectedCustomer) {
-      setShowBalanceRechargeModal(true);
-    }
-  };
-
   // Función para abrir modal de traslado de cuenta
   const handleTransferAccount = () => {
     if (selectedCustomer) {
@@ -611,60 +677,7 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // Función para manejar la recarga de saldo con incentivos
-  const handleBalanceRecharge = async (customer: Customer, amount: number, bonus: number) => {
-    try {
-      const newBalance = customer.balance + amount + bonus;
-      const updatedCustomer = {
-        ...customer,
-        balance: newBalance
-      };
-      
-      await updateCustomer(customer.id!, updatedCustomer);
-      setSelectedCustomer(updatedCustomer);
-      
-      const totalReceived = amount + bonus;
-      if (bonus > 0) {
-        toast.success(`¡Recarga exitosa! ${customer.name} pagó ${getCurrencySymbol()}${amount.toFixed(2)} y recibió ${getCurrencySymbol()}${totalReceived.toFixed(2)} (${getCurrencySymbol()}${bonus.toFixed(2)} de regalo)`);
-      } else {
-        toast.success(`Recarga exitosa! ${customer.name} ahora tiene ${getCurrencySymbol()}${newBalance.toFixed(2)}`);
-      }
-    } catch (error) {
-      toast.error('Error al recargar el saldo del cliente');
-    }
-  };
 
-  // Función para abrir modal de cobro para recarga de saldo
-  const handleOpenRechargePayment = (amount: number, bonus: number) => {
-    // Crear un pedido ficticio para la recarga
-    const rechargeOrderItems = [{
-      productId: 'recharge',
-      productName: `Recarga de Saldo${bonus > 0 ? ` + ${getCurrencySymbol()}${bonus.toFixed(2)} regalo` : ''}`,
-      quantity: 1,
-      unitPrice: amount,
-      totalPrice: amount,
-      status: 'pending'
-    }];
-
-    // Calcular totales
-    const subtotal = amount;
-    const tax = 0; // Las recargas no llevan IVA
-    const total = amount;
-
-    // Abrir modal de cobro
-    setIsPaymentModalOpen(true);
-    
-    // Guardar datos de recarga para usar en el modal de cobro
-    localStorage.setItem('rechargeData', JSON.stringify({
-      customer: selectedCustomer,
-      amount,
-      bonus,
-      orderItems: rechargeOrderItems,
-      subtotal,
-      tax,
-      total
-    }));
-  };
 
   const handleTableSelect = (table: TableData) => {
     // Si hay un cliente seleccionado, asignarlo a la mesa y eliminar nombre temporal
@@ -707,8 +720,9 @@ const Dashboard: React.FC = () => {
         
         // Calcular el total pendiente considerando cobros parciales
         const totalPartialPayments = getTotalPartialPayments(table.id);
-        const originalTotal = existingOrderItems.reduce((sum, item) => sum + item.totalPrice, 0);
-        const pendingTotal = originalTotal - totalPartialPayments;
+        // Usar el total de la mesa para consistencia con TableComponent
+        const originalTotal = table.currentOrder?.total || 0;
+        const pendingTotal = Math.max(0, originalTotal - totalPartialPayments);
         
         const isNamedAccount = table.id.startsWith('account-');
         const message = isNamedAccount 
@@ -748,18 +762,8 @@ const Dashboard: React.FC = () => {
     const tax = calculateTotalVAT(currentOrder);
     const total = calculateTotalWithVAT(currentOrder);
     
-    // Si hay una mesa seleccionada, considerar cobros parciales
-    if (selectedTable) {
-      const totalPartialPayments = getTotalPartialPayments(selectedTable.id);
-      const pendingTotal = Math.max(0, total - totalPartialPayments);
-      
-      return {
-        subtotal,
-        tax,
-        total: pendingTotal // Retornar el total pendiente
-      };
-    }
-    
+    // Retornar el total calculado del carrito actual
+    // Los cobros parciales se manejan por separado en el PaymentModal
     return {
       subtotal,
       tax,
@@ -893,12 +897,12 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="h-full flex bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
-      {/* Panel izquierdo - Categorías y Productos */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Panel izquierdo - Categorías y Productos (50%) */}
+      <div className="w-1/2 flex flex-col overflow-hidden bg-white/90 backdrop-blur-sm border-r border-gray-200/50 shadow-xl">
         {/* Header con búsqueda */}
-        <div className="bg-white/80 backdrop-blur-sm border-b border-gray-200/50 p-4 shadow-sm">
-          <div className="flex items-center space-x-4">
-            <div className="flex-1 relative">
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200/50 p-4 shadow-sm">
+          <div className="space-y-3">
+            <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input
                 type="text"
@@ -909,9 +913,9 @@ const Dashboard: React.FC = () => {
               />
             </div>
             {selectedCustomer && (
-              <div className="flex items-center space-x-2 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 px-4 py-2 rounded-xl shadow-sm">
+              <div className="flex items-center space-x-2 bg-white border border-blue-200 px-3 py-2 rounded-lg shadow-sm">
                 <User className="w-4 h-4 text-blue-600" />
-                <span className="text-sm font-medium text-blue-700">{selectedCustomer.name} {selectedCustomer.lastName}</span>
+                <span className="text-sm font-medium text-blue-700 truncate">{selectedCustomer.name} {selectedCustomer.lastName}</span>
               </div>
             )}
           </div>
@@ -922,7 +926,7 @@ const Dashboard: React.FC = () => {
           <div className="flex space-x-2 overflow-x-auto pb-2">
             <button
               onClick={() => setSelectedCategory(null)}
-              className={`px-6 py-4 rounded-xl font-medium whitespace-nowrap transition-all duration-200 shadow-sm min-h-[56px] flex items-center justify-center text-base ${
+              className={`px-4 py-3 rounded-xl font-medium whitespace-nowrap transition-all duration-200 shadow-sm ${
                 selectedCategory === null
                   ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg transform scale-105'
                   : 'bg-white text-gray-700 hover:bg-gray-50 hover:shadow-md border border-gray-200'
@@ -939,7 +943,7 @@ const Dashboard: React.FC = () => {
                   color: selectedCategory === category.id ? 'white' : undefined,
                   borderColor: selectedCategory === category.id ? category.color : undefined
                 }}
-                className={`px-6 py-4 rounded-xl font-medium whitespace-nowrap transition-all duration-200 shadow-sm min-h-[56px] flex items-center justify-center text-base ${
+                className={`px-4 py-3 rounded-xl font-medium whitespace-nowrap transition-all duration-200 shadow-sm ${
                   selectedCategory === category.id
                     ? 'text-white shadow-lg transform scale-105 border-2'
                     : 'bg-white text-gray-700 hover:bg-gray-50 hover:shadow-md border border-gray-200 hover:border-gray-300'
@@ -951,30 +955,30 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-                 {/* Productos */}
-         <div className="flex-1 overflow-y-auto p-6">
-           {!selectedTable && !isTicketWithoutTable && (
-             <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl text-center">
-               <div className="flex items-center justify-center space-x-2 text-yellow-700">
-                 <MapPin className="w-5 h-5" />
-                 <span className="font-medium">Selecciona una mesa para comenzar a agregar productos</span>
-               </div>
-             </div>
-           )}
-           {isTicketWithoutTable && (
-             <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl text-center">
-               <div className="flex items-center justify-center space-x-2 text-blue-700">
-                 <Receipt className="w-5 h-5" />
-                 <span className="font-medium">Modo ticket sin mesa - Agrega productos para cobrar directamente</span>
-               </div>
-             </div>
-           )}
-           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
-             {filteredProducts.map((product) => (
+        {/* Productos */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {!selectedTable && !isTicketWithoutTable && (
+            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-center">
+              <div className="flex items-center justify-center space-x-2 text-yellow-700">
+                <MapPin className="w-4 h-4" />
+                <span className="text-sm font-medium">Selecciona una mesa</span>
+              </div>
+            </div>
+          )}
+          {isTicketWithoutTable && (
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl text-center">
+              <div className="flex items-center justify-center space-x-2 text-blue-700">
+                <Receipt className="w-4 h-4" />
+                <span className="text-sm font-medium">Modo ticket sin mesa</span>
+              </div>
+            </div>
+          )}
+          <div className="grid grid-cols-4 gap-3">
+            {filteredProducts.map((product) => (
               <div
                 key={product.id}
                 onClick={() => handleProductClick(product)}
-                className="product-card cursor-pointer p-6 rounded-2xl shadow-md border border-gray-200/50 transition-all duration-300 hover:shadow-xl hover:scale-105 backdrop-blur-sm min-h-[120px] flex flex-col justify-center"
+                className="product-card cursor-pointer p-3 rounded-xl shadow-md border border-gray-200/50 transition-all duration-300 hover:shadow-xl hover:scale-105 backdrop-blur-sm min-h-[100px] flex flex-col justify-center"
                 style={{
                   background: product.backgroundColor 
                     ? `linear-gradient(135deg, ${product.backgroundColor}15, ${product.backgroundColor}25, ${product.backgroundColor}15)`
@@ -995,11 +999,11 @@ const Dashboard: React.FC = () => {
                 }}
               >
                 <div className="text-center">
-                  <h3 className="font-semibold text-gray-900 text-lg mb-3 line-clamp-2 leading-tight">
+                  <h3 className="font-semibold text-gray-900 text-lg mb-2 line-clamp-2 leading-tight">
                     {product.name}
                   </h3>
                   <p 
-                    className="text-xl font-bold"
+                    className="text-2xl font-bold"
                     style={{
                       color: product.backgroundColor || '#3b82f6'
                     }}
@@ -1013,97 +1017,263 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Panel derecho - Carrito y totales */}
-              <div className="w-[32rem] bg-white/90 backdrop-blur-sm border-l border-gray-200/50 flex flex-col shadow-xl">
-        {/* Header del carrito */}
-        <div className="p-6 border-b border-gray-200/50 bg-gradient-to-r from-blue-50 to-indigo-50">
-          {/* Selección de mesa y cliente */}
-          <div className="space-y-2">
-            {/* Campo para escanear código de tarjeta */}
-            <div className="relative">
-            <input
-              type="text"
-                placeholder="🔍 Escanear código de tarjeta..."
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white shadow-sm transition-all duration-200 hover:shadow-md"
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter') {
-                    const cardCode = e.currentTarget.value.trim();
-                    if (cardCode) {
-                      const customer = getCustomerByCardCode(cardCode);
-                      if (customer) {
-                        setSelectedCustomer(customer);
-                        toast.success(`Cliente ${customer.name} ${customer.lastName} seleccionado por código de tarjeta`);
-                        e.currentTarget.value = '';
-                      } else {
-                        toast.error('No se encontró un cliente con ese código de tarjeta');
-                        e.currentTarget.value = '';
-                      }
-                    }
-                  }
-                }}
-              />
+      {/* Panel derecho - Líneas de pedido y botones (50%) */}
+      <div className="w-1/2 flex bg-white/90 backdrop-blur-sm border-l border-gray-200/50 shadow-xl">
+        {/* Panel de líneas de pedido (60%) */}
+        <div className="w-[60%] flex flex-col border-r border-gray-200/50">
+          {/* Header del carrito */}
+          <div className="p-4 border-b border-gray-200/50 bg-gradient-to-r from-blue-50 to-indigo-50">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-900">Líneas de Pedido</h2>
+              <div className="flex items-center space-x-2">
+                {selectedTable && (
+                  <div className="flex items-center space-x-2 bg-white px-3 py-2 rounded-lg shadow-sm border border-gray-200">
+                    <MapPin className="w-4 h-4 text-blue-500" />
+                    <span className="text-sm font-medium text-gray-700">
+                      Mesa {selectedTable.number}{selectedTable.name ? ` - ${selectedTable.name}` : ''}
+                    </span>
+                    <div className={`w-3 h-3 rounded-full ${
+                      selectedTable.status === 'available' ? 'bg-green-500' :
+                      selectedTable.status === 'occupied' ? 'bg-red-500' :
+                      selectedTable.status === 'reserved' ? 'bg-yellow-500' :
+                      'bg-blue-500'
+                    }`} />
+                  </div>
+                )}
+                {isTicketWithoutTable && (
+                  <div className="flex items-center space-x-2 bg-blue-100 px-3 py-2 rounded-lg shadow-sm border border-blue-200">
+                    <Receipt className="w-4 h-4 text-blue-600" />
+                    <span className="text-sm font-medium text-blue-700">Ticket sin mesa</span>
+                  </div>
+                )}
+              </div>
             </div>
+          </div>
+
+          {/* Items del carrito */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {currentOrder.length === 0 ? (
+              <div className="text-center text-gray-500 mt-8">
+                <ShoppingCart className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                <p className="font-medium">No hay productos en el pedido</p>
+                <p className="text-sm text-gray-400 mt-1">Selecciona productos del panel izquierdo para agregar</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {currentOrder.map((item) => (
+                  <div key={item.productId} className="bg-gradient-to-r from-white to-gray-50 rounded-lg p-3 border border-gray-200/50 shadow-sm hover:shadow-md transition-all duration-200">
+                    <div className="flex items-center gap-3">
+                      {/* Botón eliminar */}
+                      <button
+                        onClick={() => removeFromOrder(item.productId)}
+                        className="p-1 text-red-600 hover:bg-red-100 rounded-lg transition-all duration-200 hover:scale-110 flex-shrink-0"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      
+                      {/* Nombre del producto */}
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-semibold text-gray-900 text-base leading-tight">{item.productName}</h4>
+                      </div>
+                      
+                      {/* Precio unitario */}
+                      <div className="flex-shrink-0">
+                        <button
+                          onClick={() => togglePriceEdit(item.productId)}
+                          className={`text-sm font-semibold hover:underline cursor-pointer flex items-center ${
+                            item.unitPrice !== products.find(p => p.id === item.productId)?.price
+                              ? 'text-blue-600'
+                              : 'text-gray-700'
+                          }`}
+                          title="Haz clic para editar el precio (IVA incluido)"
+                        >
+                          {getCurrencySymbol()}{formatPrice(item.unitPrice)} c/u
+                          <DollarSign className="w-3 h-3 ml-1 opacity-50" />
+                        </button>
+                      </div>
+                      
+                      {/* Botón modificadores */}
+                      <div className="flex-shrink-0">
+                        <button
+                          onClick={() => openModifiersForItem(item.productId)}
+                          className="text-xs text-gray-500 hover:text-blue-600 px-2 py-1 rounded hover:bg-blue-50 border border-gray-200"
+                          title="Añadir modificadores"
+                        >
+                          Mods
+                        </button>
+                        {item.unitPrice !== products.find(p => p.id === item.productId)?.price && (
+                          <button
+                            onClick={() => resetToOriginalPrice(item.productId)}
+                            className="text-xs text-gray-400 hover:text-blue-600 p-1 rounded hover:bg-blue-50 ml-1"
+                            title="Restaurar precio original"
+                          >
+                            ↺
+                          </button>
+                        )}
+                      </div>
+                      
+                      {/* Controles de cantidad */}
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          onClick={() => updateQuantity(item.productId, -1)}
+                          className="p-1 rounded bg-gray-200 hover:bg-blue-500 hover:text-white transition-all duration-200 hover:scale-110 min-w-[24px] min-h-[24px] flex items-center justify-center"
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <span className="w-6 text-center font-semibold text-gray-800 text-sm">{item.quantity}</span>
+                        <button
+                          onClick={() => updateQuantity(item.productId, 1)}
+                          className="p-1 rounded bg-gray-200 hover:bg-blue-500 hover:text-white transition-all duration-200 hover:scale-110 min-w-[24px] min-h-[24px] flex items-center justify-center"
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+                      
+                      {/* Total del item */}
+                      <div className="flex-shrink-0">
+                        <span className="text-base font-bold text-gray-900">
+                          {getCurrencySymbol()}{formatPrice(item.totalPrice)}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {/* Modificadores en línea separada si existen */}
+                    {item.modifiers && item.modifiers.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {item.modifiers.map((m, idx) => (
+                          <span key={idx} className="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-600 rounded border">
+                            {m}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Totales */}
+          {(currentOrder.length > 0 || editOrderId) && (
+            <div className="border-t border-gray-200/50 p-4 bg-gradient-to-r from-blue-50/50 to-indigo-50/50">
+              {currentOrder.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Subtotal (sin IVA):</span>
+                    <span>{getCurrencySymbol()}{formatPrice(subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span>IVA (21%):</span>
+                    <span>{getCurrencySymbol()}{formatPrice(tax)}</span>
+                  </div>
+                  
+                  {/* Información de cobros parciales */}
+                  {selectedTable && getTotalPartialPayments(selectedTable.id) > 0 && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 space-y-1">
+                      <div className="flex justify-between text-xs text-yellow-800">
+                        <span className="font-medium">Total actual:</span>
+                        <span>{getCurrencySymbol()}{formatPrice(total)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs text-yellow-700">
+                        <span>Ya cobrado:</span>
+                        <span className="font-medium">{getCurrencySymbol()}{formatPrice(getTotalPartialPayments(selectedTable.id))}</span>
+                      </div>
+                      <div className="flex justify-between text-sm text-yellow-800 font-semibold border-t border-yellow-300 pt-1">
+                        <span>Pendiente por cobrar:</span>
+                        <span>{getCurrencySymbol()}{formatPrice(total - getTotalPartialPayments(selectedTable.id))}</span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="flex justify-between text-lg font-bold border-t pt-2 border-gray-300">
+                    <span className="text-gray-800">Total (IVA incl.):</span>
+                    <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">{getCurrencySymbol()}{formatPrice(total)}</span>
+                  </div>
+                </div>
+              ) : editOrderId && (
+                <div className="text-center text-gray-600 py-2">
+                  <p className="text-sm font-medium">Ticket vacío</p>
+                  <p className="text-xs text-gray-500 mt-1">Puedes guardar el ticket sin productos o cancelar la edición</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Panel de botones de acción (40%) */}
+        <div className="w-[40%] flex flex-col bg-gradient-to-r from-green-50 to-emerald-50">
+          {/* Header de acciones */}
+          <div className="p-4 border-b border-gray-200/50">
+            <h2 className="text-lg font-bold text-gray-900 mb-3">Acciones</h2>
             
-            <CustomerSelector
-              selectedCustomer={selectedCustomer}
-              onCustomerSelect={setSelectedCustomer}
-              placeholder="Seleccionar cliente (opcional)"
-            />
-            
-            {/* Botones del cliente */}
-            {selectedCustomer && (
-              <div className="space-y-2">
-                <div className="flex space-x-2">
+            {/* Botón para seleccionar cliente */}
+            <button
+              onClick={() => setShowCustomerSelectorModal(true)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-left flex items-center justify-between hover:bg-gray-50 transition-all duration-200 hover:shadow-md bg-white shadow-sm"
+            >
+              <div className="flex items-center space-x-2">
+                <User className="w-4 h-4 text-blue-500" />
+                <span className={selectedCustomer ? 'text-gray-900' : 'text-gray-500'}>
+                  {selectedCustomer 
+                    ? `${selectedCustomer.name} ${selectedCustomer.lastName}` 
+                    : 'Seleccionar cliente'
+                  }
+                </span>
+              </div>
+              {selectedCustomer && (
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs text-green-600 font-medium">
+                    {getCurrencySymbol()}{selectedCustomer.balance.toFixed(2)}
+                  </span>
                   <button
-                    onClick={handleRechargeBalance}
-                    className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white py-3 px-4 rounded-xl font-medium flex items-center justify-center space-x-2 transition-all duration-200 hover:shadow-lg hover:scale-105 text-sm"
-                  >
-                    <DollarSign className="w-4 h-4" />
-                    <span>Recargar Saldo</span>
-                  </button>
-                  <button
-                    onClick={() => setSelectedCustomer(null)}
-                    className="px-4 py-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 text-gray-500 hover:text-red-500 hover:border-red-300 shadow-sm hover:shadow-md min-w-[48px] min-h-[48px] flex items-center justify-center text-lg font-bold"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedCustomer(null);
+                    }}
+                    className="text-red-500 hover:text-red-700"
                     title="Quitar cliente"
                   >
                     ✕
                   </button>
                 </div>
-                <button
-                  onClick={handleTransferAccount}
-                  className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white py-3 px-4 rounded-xl font-medium flex items-center justify-center space-x-2 transition-all duration-200 hover:shadow-lg hover:scale-105 text-sm"
-                >
-                  <Link2 className="w-4 h-4" />
-                  <span>Trasladar Cuenta a Cliente</span>
-                </button>
+              )}
+            </button>
+          </div>
+
+          {/* Botones de acción */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {/* Botones del cliente */}
+            {selectedCustomer && (
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={handleTransferAccount}
+                    className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white py-2 px-3 rounded-lg font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-lg hover:scale-105 text-xs"
+                  >
+                    <Link2 className="w-3 h-3" />
+                    <span>Trasladar</span>
+                  </button>
+                </div>
               </div>
             )}
             
             {/* Botón para seleccionar mesa */}
-            <div className="flex space-x-2">
+            <div className="space-y-2">
               <button
                 onClick={() => setIsTableModalOpen(true)}
-                className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-left flex items-center justify-between hover:bg-gray-50 transition-all duration-200 hover:shadow-md bg-white shadow-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs text-left flex items-center justify-between hover:bg-gray-50 transition-all duration-200 hover:shadow-md bg-white shadow-sm"
               >
-                <div className="flex items-center space-x-2">
-                  <MapPin className="w-4 h-4 text-blue-500" />
-                  <div className="flex flex-col">
+                <div className="flex items-center space-x-1">
+                  <MapPin className="w-3 h-3 text-blue-500" />
                   <span className={selectedTable ? 'text-gray-900' : 'text-gray-500'}>
                     {selectedTable 
-                      ? `Mesa ${selectedTable.number}${selectedTable.name ? ` - ${selectedTable.name}` : ''}` 
+                      ? `Mesa ${selectedTable.number}` 
                       : 'Seleccionar mesa'
                     }
                   </span>
-                    {/* Indicador de cobros parciales */}
-                    {selectedTable && getTotalPartialPayments(selectedTable.id) > 0 && (
-                      <span className="text-xs text-yellow-600 font-medium">
-                        ⚠️ Cobros parciales: {getCurrencySymbol()}{formatPrice(getTotalPartialPayments(selectedTable.id))}
-                      </span>
-                    )}
-                  </div>
                 </div>
                 {selectedTable && (
-                  <div className={`w-3 h-3 rounded-full ${
+                  <div className={`w-2 h-2 rounded-full ${
                     selectedTable.status === 'available' ? 'bg-green-500' :
                     selectedTable.status === 'occupied' ? 'bg-red-500' :
                     selectedTable.status === 'reserved' ? 'bg-yellow-500' :
@@ -1111,243 +1281,104 @@ const Dashboard: React.FC = () => {
                   }`} />
                 )}
               </button>
-                             {selectedTable && (
-                 <button
-                   onClick={() => {
-                     setSelectedTable(null);
-                     setCurrentOrder([]);
-                     setSelectedCustomer(null);
-                     setIsTableModalOpen(true);
-                   }}
-                   className="px-4 py-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 text-gray-500 hover:text-red-500 hover:border-red-300 shadow-sm hover:shadow-md min-w-[48px] min-h-[48px] flex items-center justify-center text-lg font-bold"
-                   title="Cambiar mesa"
-                 >
-                   ✕
-                 </button>
-               )}
+              {selectedTable && (
+                <button
+                  onClick={() => {
+                    setSelectedTable(null);
+                    setCurrentOrder([]);
+                    setSelectedCustomer(null);
+                    setIsTableModalOpen(true);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-all duration-200 text-gray-500 hover:text-red-500 hover:border-red-300 shadow-sm hover:shadow-md flex items-center justify-center text-xs"
+                >
+                  Cambiar Mesa
+                </button>
+              )}
             </div>
-          </div>
-        </div>
 
-        {/* Items del carrito */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {currentOrder.length === 0 ? (
-            <div className="text-center text-gray-500 mt-8">
-              <ShoppingCart className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-              <p>No hay productos en el pedido</p>
-              <p className="text-sm">Selecciona productos para agregar</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {currentOrder.map((item) => (
-                <div key={item.productId} className="bg-gradient-to-r from-white to-gray-50 rounded-lg p-3 border border-gray-200/50 shadow-sm hover:shadow-md transition-all duration-200">
-                  <div className="flex items-center gap-4">
-                    {/* Botón eliminar */}
-                    <button
-                      onClick={() => removeFromOrder(item.productId)}
-                      className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-all duration-200 hover:scale-110 flex-shrink-0"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                    
-                    {/* Nombre del producto */}
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-gray-900 text-lg leading-tight">{item.productName}</h4>
-                    </div>
-                    
-                    {/* Precio unitario */}
-                    <div className="flex-shrink-0">
-                        <button
-                          onClick={() => togglePriceEdit(item.productId)}
-                        className={`text-base font-semibold hover:underline cursor-pointer flex items-center ${
-                            item.unitPrice !== products.find(p => p.id === item.productId)?.price
-                            ? 'text-blue-600'
-                            : 'text-gray-700'
-                          }`}
-                          title="Haz clic para editar el precio (IVA incluido)"
-                        >
-                        {getCurrencySymbol()}{formatPrice(item.unitPrice)} c/u
-                        <DollarSign className="w-4 h-4 ml-1 opacity-50" />
-                        </button>
-                    </div>
-                    
-                    {/* Botón modificadores */}
-                    <div className="flex-shrink-0">
-                        <button
-                          onClick={() => openModifiersForItem(item.productId)}
-                          className="text-xs text-gray-500 hover:text-blue-600 px-2 py-1 rounded hover:bg-blue-50"
-                          title="Añadir modificadores"
-                        >
-                        Mods
-                        </button>
-                        {item.unitPrice !== products.find(p => p.id === item.productId)?.price && (
-                          <button
-                            onClick={() => resetToOriginalPrice(item.productId)}
-                          className="text-xs text-gray-400 hover:text-blue-600 p-1 rounded hover:bg-blue-50 ml-1"
-                            title="Restaurar precio original"
-                          >
-                            ↺
-                          </button>
-                        )}
-                  </div>
-                  
-                    {/* Controles de cantidad */}
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <button
-                        onClick={() => updateQuantity(item.productId, -1)}
-                        className="p-1 rounded bg-gray-200 hover:bg-blue-500 hover:text-white transition-all duration-200 hover:scale-110 min-w-[24px] min-h-[24px] flex items-center justify-center"
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <span className="w-6 text-center font-semibold text-gray-800 text-sm">{item.quantity}</span>
-                      <button
-                        onClick={() => updateQuantity(item.productId, 1)}
-                        className="p-1 rounded bg-gray-200 hover:bg-blue-500 hover:text-white transition-all duration-200 hover:scale-110 min-w-[24px] min-h-[24px] flex items-center justify-center"
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
-                  
-                  {/* Modificadores en línea separada si existen */}
-                  {item.modifiers && item.modifiers.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {item.modifiers.map((m, idx) => (
-                        <span key={idx} className="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-600 rounded">
-                          {m}
-                    </span>
-                      ))}
-                  </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Totales y acciones */}
-        {(currentOrder.length > 0 || editOrderId) && (
-          <div className="border-t border-gray-200/50 p-6 space-y-4 bg-gradient-to-r from-blue-50/50 to-indigo-50/50">
-            {currentOrder.length > 0 ? (
+            {/* Botones principales */}
+            {editOrderId ? (
               <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>Subtotal (sin IVA):</span>
-                  <span>{getCurrencySymbol()}{formatPrice(subtotal)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>IVA (21%):</span>
-                  <span>{getCurrencySymbol()}{formatPrice(tax)}</span>
-                </div>
-                
-                {/* Información de cobros parciales */}
-                {selectedTable && getTotalPartialPayments(selectedTable.id) > 0 && (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 space-y-2">
-                    <div className="flex justify-between text-sm text-yellow-800">
-                      <span className="font-medium">Total original:</span>
-                      <span>{getCurrencySymbol()}{formatPrice(total + getTotalPartialPayments(selectedTable.id))}</span>
-                    </div>
-                    <div className="flex justify-between text-sm text-yellow-700">
-                      <span>Ya cobrado:</span>
-                      <span className="font-medium">{getCurrencySymbol()}{formatPrice(getTotalPartialPayments(selectedTable.id))}</span>
-                    </div>
-                    <div className="flex justify-between text-sm text-yellow-800 font-semibold border-t border-yellow-300 pt-1">
-                      <span>Pendiente por cobrar:</span>
-                      <span>{getCurrencySymbol()}{formatPrice(total)}</span>
-                    </div>
-                  </div>
-                )}
-                
-                <div className="flex justify-between text-xl font-bold border-t pt-3 border-gray-300">
-                  <span className="text-gray-800">Total (IVA incl.):</span>
-                  <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">{getCurrencySymbol()}{formatPrice(total)}</span>
-                </div>
-              </div>
-            ) : editOrderId && (
-              <div className="text-center text-gray-600 py-4">
-                <p className="text-sm font-medium">Ticket vacío</p>
-                <p className="text-xs text-gray-500 mt-1">Puedes guardar el ticket sin productos o cancelar la edición</p>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              {editOrderId ? (
-                <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={saveEditedOrder}
-                    className="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white py-4 px-6 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
+                    className="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white py-3 px-4 rounded-lg font-semibold flex items-center justify-center space-x-1 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 text-sm"
                   >
-                    <Receipt className="w-5 h-5" />
-                    <span>Guardar Cambios</span>
+                    <Receipt className="w-4 h-4" />
+                    <span>Guardar</span>
                   </button>
                   <button
                     onClick={clearEditingState}
-                    className="w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white py-3 px-6 rounded-xl font-medium flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
+                    className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center space-x-1 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 text-sm"
                   >
                     <X className="w-4 h-4" />
-                    <span>Cancelar Edición</span>
+                    <span>Cancelar</span>
                   </button>
                 </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-3">
+              </div>
+            ) : (
+              <div className="space-y-2">
                 <button
                   onClick={processOrder}
-                    className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-3 px-4 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 text-sm"
+                  className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-2 px-3 rounded-lg font-semibold flex items-center justify-center space-x-1 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 text-xs"
                 >
-                    <Receipt className="w-4 h-4" />
-                    <span>Procesar</span>
+                  <Receipt className="w-3 h-3" />
+                  <span>Procesar Pedido</span>
                 </button>
-                </div>
-              )}
-              
-                                             <div className="grid grid-cols-3 gap-2">
-                  <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-2 rounded-xl font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-md text-sm">
-                    <Calculator className="w-4 h-4" />
+                
+                <div className="grid grid-cols-2 gap-2">
+                  <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-2 rounded-lg font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-md text-xs">
+                    <Calculator className="w-3 h-3" />
                     <span>Dividir</span>
-                  </button>
-                  <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-2 rounded-xl font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-md text-sm">
-                    <CreditCard className="w-4 h-4" />
-                    <span>Tarjeta</span>
                   </button>
                   <button 
                     onClick={() => setIsMergeModalOpen(true)}
-                    className="bg-blue-100 hover:bg-blue-200 text-blue-700 py-3 px-2 rounded-xl font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-md text-sm"
+                    className="bg-blue-100 hover:bg-blue-200 text-blue-700 py-2 px-2 rounded-lg font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-md text-xs"
                   >
-                    <Link2 className="w-4 h-4" />
+                    <Link2 className="w-3 h-3" />
                     <span>Unir</span>
                   </button>
                 </div>
                 
-                
-               
-               
-               
-                                            {/* Botones principales - Cobrar y Vaciar */}
-               {(selectedTable && selectedTable.status === 'occupied') || isTicketWithoutTable ? (
-                 <div className="grid grid-cols-2 gap-3">
-                   {/* Botón Cobrar - Destacado */}
-                   <button
-                     onClick={() => setIsPaymentModalOpen(true)}
-                     className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white py-3 px-4 rounded-xl font-bold flex items-center justify-center space-x-2 shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105 text-base border-2 border-green-400 ring-2 ring-green-200 animate-pulse"
-                   >
-                     <DollarSign className="w-5 h-5" />
-                     <span>Cobrar</span>
-                   </button>
-                   
-                   {/* Botón Vaciar */}
+                {/* Botones principales - Cobrar y Vaciar */}
+                {((selectedTable && selectedTable.status === 'occupied') || isTicketWithoutTable) && currentOrder.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Botón Cobrar - Destacado */}
+                    <button
+                      onClick={() => setIsPaymentModalOpen(true)}
+                      className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white py-3 px-4 rounded-lg font-bold flex items-center justify-center space-x-2 shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105 text-sm border-2 border-green-400 ring-2 ring-green-200 animate-pulse"
+                    >
+                      <DollarSign className="w-4 h-4" />
+                      <span>COBRAR</span>
+                    </button>
+                    
+                    {/* Botón Vaciar */}
                     {selectedTable && (
                       <button
                         onClick={clearTableCompleteOrder}
-                       className="bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white py-3 px-4 rounded-xl font-semibold flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 text-sm"
+                        className="bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white py-2 px-3 rounded-lg font-semibold flex items-center justify-center space-x-1 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 text-xs"
                       >
-                       <Trash2 className="w-4 h-4" />
-                       <span>Vaciar</span>
+                        <Trash2 className="w-3 h-3" />
+                        <span>Vaciar</span>
                       </button>
                     )}
-                 </div>
-               ) : null}
-            </div>
+                  </div>
+                ) : null}
+              </div>
+            )}
           </div>
-        )}
+          
+          {/* Botón de configuración en la parte inferior */}
+          <div className="border-t border-gray-200/50 p-4">
+            <button
+              onClick={() => navigate('/configuration')}
+              className="w-full bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white py-2 px-3 rounded-lg font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-lg hover:scale-105 text-xs"
+            >
+              <Settings className="w-3 h-3" />
+              <span>Configuración</span>
+            </button>
+          </div>
+        </div>
       </div>
 
                               {/* Modal de selección de mesas */}
@@ -1558,18 +1589,6 @@ const Dashboard: React.FC = () => {
            />
          )}
 
-         {/* Modal de recarga de saldo con incentivos */}
-         {showBalanceRechargeModal && selectedCustomer && (
-           <BalanceRechargeModal
-             isOpen={showBalanceRechargeModal}
-             onClose={() => setShowBalanceRechargeModal(false)}
-             customer={selectedCustomer}
-             incentives={incentives}
-             onRecharge={handleBalanceRecharge}
-             onOpenPaymentModal={handleOpenRechargePayment}
-           />
-         )}
-
          {/* Modal de traslado de cuenta */}
          {showTransferModal && selectedCustomer && (
            <TransferAccountModal
@@ -1578,6 +1597,16 @@ const Dashboard: React.FC = () => {
              customer={selectedCustomer}
              tables={tables}
              onTransfer={handleTransferAccountComplete}
+           />
+         )}
+
+         {/* Modal de selección de clientes */}
+         {showCustomerSelectorModal && (
+           <CustomerSelectorModal
+             isOpen={showCustomerSelectorModal}
+             onClose={() => setShowCustomerSelectorModal(false)}
+             onCustomerSelect={setSelectedCustomer}
+             selectedCustomer={selectedCustomer}
            />
          )}
       </div>

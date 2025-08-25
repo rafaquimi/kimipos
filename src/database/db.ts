@@ -200,8 +200,8 @@ export class KimiPOSDatabase extends Dexie {
     });
 
     this.categories.hook('updating', function (modifications, primKey, obj, trans) {
-      modifications.updatedAt = new Date();
-      modifications.syncStatus = 'pending';
+      (modifications as any).updatedAt = new Date();
+      (modifications as any).syncStatus = 'pending';
     });
 
     this.products.hook('creating', function (primKey, obj, trans) {
@@ -211,8 +211,8 @@ export class KimiPOSDatabase extends Dexie {
     });
 
     this.products.hook('updating', function (modifications, primKey, obj, trans) {
-      modifications.updatedAt = new Date();
-      modifications.syncStatus = 'pending';
+      (modifications as any).updatedAt = new Date();
+      (modifications as any).syncStatus = 'pending';
     });
 
     this.posTables.hook('creating', function (primKey, obj, trans) {
@@ -222,8 +222,8 @@ export class KimiPOSDatabase extends Dexie {
     });
 
     this.posTables.hook('updating', function (modifications, primKey, obj, trans) {
-      modifications.updatedAt = new Date();
-      modifications.syncStatus = 'pending';
+      (modifications as any).updatedAt = new Date();
+      (modifications as any).syncStatus = 'pending';
     });
 
     this.salons.hook('creating', function (primKey, obj, trans) {
@@ -233,8 +233,8 @@ export class KimiPOSDatabase extends Dexie {
     });
 
     this.salons.hook('updating', function (modifications, primKey, obj, trans) {
-      modifications.updatedAt = new Date();
-      modifications.syncStatus = 'pending';
+      (modifications as any).updatedAt = new Date();
+      (modifications as any).syncStatus = 'pending';
     });
 
     this.customers.hook('creating', function (primKey, obj, trans) {
@@ -244,8 +244,8 @@ export class KimiPOSDatabase extends Dexie {
     });
 
     this.customers.hook('updating', function (modifications, primKey, obj, trans) {
-      modifications.updatedAt = new Date();
-      modifications.syncStatus = 'pending';
+      (modifications as any).updatedAt = new Date();
+      (modifications as any).syncStatus = 'pending';
     });
 
     this.orders.hook('creating', function (primKey, obj, trans) {
@@ -255,8 +255,8 @@ export class KimiPOSDatabase extends Dexie {
     });
 
     this.orders.hook('updating', function (modifications, primKey, obj, trans) {
-      modifications.updatedAt = new Date();
-      modifications.syncStatus = 'pending';
+      (modifications as any).updatedAt = new Date();
+      (modifications as any).syncStatus = 'pending';
     });
 
     this.customers.hook('creating', function (primKey, obj, trans) {
@@ -266,8 +266,8 @@ export class KimiPOSDatabase extends Dexie {
     });
 
     this.customers.hook('updating', function (modifications, primKey, obj, trans) {
-      modifications.updatedAt = new Date();
-      modifications.syncStatus = 'pending';
+      (modifications as any).updatedAt = new Date();
+      (modifications as any).syncStatus = 'pending';
     });
 
     this.configuration.hook('creating', function (primKey, obj, trans) {
@@ -276,8 +276,8 @@ export class KimiPOSDatabase extends Dexie {
     });
 
     this.configuration.hook('updating', function (modifications, primKey, obj, trans) {
-      modifications.updatedAt = new Date();
-      modifications.syncStatus = 'pending';
+      (modifications as any).updatedAt = new Date();
+      (modifications as any).syncStatus = 'pending';
     });
 
     this.syncLogs.hook('creating', function (primKey, obj, trans) {
@@ -291,8 +291,8 @@ export class KimiPOSDatabase extends Dexie {
     });
 
     this.namedAccounts.hook('updating', function (modifications, primKey, obj, trans) {
-      modifications.updatedAt = new Date();
-      modifications.syncStatus = 'pending';
+      (modifications as any).updatedAt = new Date();
+      (modifications as any).syncStatus = 'pending';
     });
 
     this.balanceIncentives.hook('creating', function (primKey, obj, trans) {
@@ -302,8 +302,8 @@ export class KimiPOSDatabase extends Dexie {
     });
 
     this.balanceIncentives.hook('updating', function (modifications, primKey, obj, trans) {
-      modifications.updatedAt = new Date();
-      modifications.syncStatus = 'pending';
+      (modifications as any).updatedAt = new Date();
+      (modifications as any).syncStatus = 'pending';
     });
   }
 

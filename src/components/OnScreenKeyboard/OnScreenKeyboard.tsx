@@ -18,10 +18,19 @@ const OnScreenKeyboard: React.FC = () => {
 
   // posición y tamaño persistentes
   const LS_KEY = 'osk:possize:v1';
-  const [pos, setPos] = useState<{x:number;y:number}>(() => ({ x: 20, y: window.innerHeight - 360 }));
-  const [size, setSize] = useState<{w:number;h:number}>(() => ({ w: 980, h: 320 }));
+  const [pos, setPos] = useState<{x:number;y:number}>(() => ({ x: 20, y: window.innerHeight - 400 }));
+  const [size, setSize] = useState<{w:number;h:number}>(() => ({ w: 980, h: 360 }));
   const dragRef = useRef<{dragging:boolean;dx:number;dy:number}>({ dragging: false, dx: 0, dy: 0 });
   const resizeRef = useRef<{dir:null|"right"|"bottom"|"corner";startX:number;startY:number;startW:number;startH:number}>({ dir: null, startX: 0, startY: 0, startW: 0, startH: 0 });
+
+  // Calcular altura dinámica de los botones
+  const headerHeight = 48; // altura del header
+  const padding = 24; // padding total (12px arriba + 12px abajo)
+  const gap = 8; // gap entre filas
+  const numRows = 5; // número total de filas (4 filas de teclas + 1 fila de botones especiales)
+  const availableHeight = size.h - headerHeight - padding - (gap * (numRows - 1));
+  // Usar un factor de reducción para asegurar que quepan todos los botones
+  const buttonHeight = Math.max(28, Math.min(60, Math.floor(availableHeight / numRows * 0.9))); // altura mínima 28px, máxima 60px, con 10% de margen
 
   useEffect(() => {
     try {
@@ -52,7 +61,7 @@ const OnScreenKeyboard: React.FC = () => {
         const dx = e.clientX - resizeRef.current.startX;
         const dy = e.clientY - resizeRef.current.startY;
         const minW = 600;
-        const minH = 260;
+        const minH = 320; // Aumentar altura mínima para asegurar que quepan todos los botones
         if (resizeRef.current.dir === 'right') {
           setSize(s => ({ w: Math.max(minW, resizeRef.current.startW + dx), h: s.h }));
         } else if (resizeRef.current.dir === 'bottom') {
@@ -100,33 +109,103 @@ const OnScreenKeyboard: React.FC = () => {
         <div className="p-3 h-[calc(100%-48px)] overflow-auto">
           <div className="grid gap-2 mb-2" style={{ gridTemplateColumns: 'repeat(10, minmax(0, 1fr))' }}>
             {rows[0].map(key => (
-              <button key={key} className="h-12 rounded bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-lg" onClick={() => insertText(key)}>{key}</button>
+              <button 
+                key={key} 
+                className="rounded bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-lg flex items-center justify-center" 
+                style={{ height: buttonHeight }}
+                onClick={() => insertText(key)}
+              >
+                {key}
+              </button>
             ))}
           </div>
           <div className="grid gap-2 mb-2" style={{ gridTemplateColumns: 'repeat(10, minmax(0, 1fr))' }}>
             {rows[1].map(key => (
-              <button key={key} className="h-12 rounded bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-lg" onClick={() => insertText(key)}>{key}</button>
+              <button 
+                key={key} 
+                className="rounded bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-lg flex items-center justify-center" 
+                style={{ height: buttonHeight }}
+                onClick={() => insertText(key)}
+              >
+                {key}
+              </button>
             ))}
           </div>
           <div className="grid gap-2 mb-2" style={{ gridTemplateColumns: 'repeat(13, minmax(0, 1fr))' }}>
-            <button className={`h-12 rounded ${isShift ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'} text-sm col-span-2`} onClick={() => setIsShift(v => !v)}>Shift</button>
+            <button 
+              className={`rounded ${isShift ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'} text-sm col-span-2 flex items-center justify-center`} 
+              style={{ height: buttonHeight }}
+              onClick={() => setIsShift(v => !v)}
+            >
+              Shift
+            </button>
             {rows[2].map(key => (
-              <button key={key} className="h-12 rounded bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-lg" onClick={() => insertText(key)}>{key}</button>
+              <button 
+                key={key} 
+                className="rounded bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-lg flex items-center justify-center" 
+                style={{ height: buttonHeight }}
+                onClick={() => insertText(key)}
+              >
+                {key}
+              </button>
             ))}
-            <button className="h-12 rounded bg-gray-100 hover:bg-gray-200 text-sm col-span-2" onClick={backspace}>⌫</button>
+            <button 
+              className="rounded bg-gray-100 hover:bg-gray-200 text-sm col-span-2 flex items-center justify-center" 
+              style={{ height: buttonHeight }}
+              onClick={backspace}
+            >
+              ⌫
+            </button>
           </div>
           <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(11, minmax(0, 1fr))' }}>
-            <button className="h-12 rounded bg-gray-100 hover:bg-gray-200 text-sm col-span-2" onClick={() => moveCaret(-1)}>◀</button>
+            <button 
+              className="rounded bg-gray-100 hover:bg-gray-200 text-sm col-span-2 flex items-center justify-center" 
+              style={{ height: buttonHeight }}
+              onClick={() => moveCaret(-1)}
+            >
+              ◀
+            </button>
             {rows[3].map(key => (
-              <button key={key} className="h-12 rounded bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-lg" onClick={() => insertText(key)}>{key}</button>
+              <button 
+                key={key} 
+                className="rounded bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-lg flex items-center justify-center" 
+                style={{ height: buttonHeight }}
+                onClick={() => insertText(key)}
+              >
+                {key}
+              </button>
             ))}
-            <button className="h-12 rounded bg-gray-100 hover:bg-gray-200 text-sm col-span-2" onClick={() => moveCaret(1)}>▶</button>
+            <button 
+              className="rounded bg-gray-100 hover:bg-gray-200 text-sm col-span-2 flex items-center justify-center" 
+              style={{ height: buttonHeight }}
+              onClick={() => moveCaret(1)}
+            >
+              ▶
+            </button>
           </div>
           <div className="grid gap-2 mt-2 items-stretch" style={{ gridTemplateColumns: 'repeat(12, minmax(0, 1fr))' }}>
             <div className="col-span-2" />
-            <button className="h-12 col-span-6 rounded bg-gray-100 hover:bg-gray-200" onClick={() => insertText(' ')}>Espacio</button>
-            <button className="h-12 col-span-2 rounded bg-gray-100 hover:bg-gray-200" onClick={() => insertText('\n')}>Enter</button>
-            <button className="h-12 col-span-2 rounded bg-emerald-600 text-white hover:bg-emerald-700" onClick={commit}>Aceptar</button>
+            <button 
+              className="col-span-6 rounded bg-gray-100 hover:bg-gray-200 flex items-center justify-center" 
+              style={{ height: buttonHeight }}
+              onClick={() => insertText(' ')}
+            >
+              Espacio
+            </button>
+            <button 
+              className="col-span-2 rounded bg-gray-100 hover:bg-gray-200 flex items-center justify-center" 
+              style={{ height: buttonHeight }}
+              onClick={() => insertText('\n')}
+            >
+              Enter
+            </button>
+            <button 
+              className="col-span-2 rounded bg-emerald-600 text-white hover:bg-emerald-700 flex items-center justify-center" 
+              style={{ height: buttonHeight }}
+              onClick={commit}
+            >
+              Aceptar
+            </button>
           </div>
         </div>
 

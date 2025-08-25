@@ -21,6 +21,7 @@ export interface Product {
   description?: string;
   image?: string;
   backgroundColor?: string;
+  taxId?: string; // ID del impuesto aplicado al producto
   tariffs?: ProductTariff[]; // Array de tarifas disponibles (opcional para compatibilidad)
   combinations?: ProductCombination[]; // Combinaciones disponibles (opcional para compatibilidad)
   isActive: boolean;

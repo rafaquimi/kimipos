@@ -12,7 +12,8 @@ import {
   Save,
   X
 } from 'lucide-react';
-import { useProducts, Product } from '../contexts/ProductContext';
+import { useProducts } from '../contexts/ProductContext';
+import { Product } from '../types/product';
 import { useConfig } from '../contexts/ConfigContext';
 import ColorPicker from '../components/ColorPicker';
 import ProductTariffManager from '../components/ProductTariffManager';
@@ -22,7 +23,7 @@ import toast from 'react-hot-toast';
 
 const Products: React.FC = () => {
   const { products, categories, addProduct, updateProduct, deleteProduct } = useProducts();
-  const { getCurrencySymbol } = useConfig();
+  const { getCurrencySymbol, config } = useConfig();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
@@ -36,7 +37,8 @@ const Products: React.FC = () => {
     categoryId: '',
     description: '',
     backgroundColor: '#3b82f6', // Color por defecto
-    isActive: true
+    isActive: true,
+    taxId: '' // ID del impuesto seleccionado
   });
   const [productTariffs, setProductTariffs] = useState<ProductTariff[]>([]);
   const [productCombinations, setProductCombinations] = useState<ProductCombination[]>([]);
@@ -59,7 +61,8 @@ const Products: React.FC = () => {
         categoryId: product.categoryId,
         description: product.description || '',
         backgroundColor: product.backgroundColor || '#3b82f6',
-        isActive: product.isActive
+        isActive: product.isActive,
+        taxId: product.taxId || config.defaultTaxId || ''
       });
       setProductTariffs(product.tariffs || []);
       setProductCombinations(product.combinations || []);
@@ -71,7 +74,8 @@ const Products: React.FC = () => {
         categoryId: categories[0]?.id || '',
         description: '',
         backgroundColor: '#3b82f6',
-        isActive: true
+        isActive: true,
+        taxId: config.defaultTaxId || ''
       });
       setProductTariffs([]);
       setProductCombinations([]);
@@ -89,7 +93,8 @@ const Products: React.FC = () => {
       categoryId: '',
       description: '',
       backgroundColor: '#3b82f6',
-      isActive: true
+      isActive: true,
+      taxId: ''
     });
     setProductTariffs([]);
     setProductCombinations([]);
@@ -114,6 +119,7 @@ const Products: React.FC = () => {
       categoryId: formData.categoryId,
       description: formData.description.trim(),
       backgroundColor: formData.backgroundColor,
+      taxId: formData.taxId,
       tariffs: productTariffs,
       combinations: productCombinations,
       isActive: formData.isActive
@@ -222,9 +228,6 @@ const Products: React.FC = () => {
                     Precio/Tarifas
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Combinaciones
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Color
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -293,49 +296,6 @@ const Products: React.FC = () => {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center text-sm font-medium text-gray-900">
-                      {product.combinations && product.combinations.length > 0 ? (
-                        <div className="space-y-1">
-                          {product.combinations.filter(c => c.isActive).map((combination, index) => {
-                            const category = categories.find(c => c.id === combination.categoryId);
-                            const specificProduct = products.find(p => p.id === combination.productId);
-                            return (
-                              <div key={combination.id} className="flex items-center space-x-2">
-                                {combination.productId ? (
-                                  <>
-                                    <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">
-                                      {specificProduct?.name || 'Producto'}
-                                    </span>
-                                    <span className="text-xs bg-purple-50 text-purple-600 px-1 rounded">
-                                      Prod
-                                    </span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                                      {category?.name || 'Categoría'}
-                                    </span>
-                                    <span className="text-xs bg-blue-50 text-blue-600 px-1 rounded">
-                                      Cat
-                                    </span>
-                                  </>
-                                )}
-                                <span className={`text-xs font-medium ${
-                                  combination.additionalPrice > 0 ? 'text-green-600' : 
-                                  combination.additionalPrice < 0 ? 'text-red-600' : 'text-gray-600'
-                                }`}>
-                                  {combination.additionalPrice > 0 ? '+' : ''}€{combination.additionalPrice.toFixed(2)}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <span className="text-gray-400 text-xs">Sin combinaciones</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
                         {product.backgroundColor && (
                           <div className="flex items-center space-x-2">
                             <div
@@ -401,137 +361,190 @@ const Products: React.FC = () => {
 
       {/* Modal para crear/editar producto */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {editingProduct ? 'Editar Producto' : 'Nuevo Producto'}
-                </h3>
-                <button
-                  onClick={closeModal}
-                  className="p-3 text-gray-400 hover:text-gray-600 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors"
-                >
-                  <X className="w-6 h-6" />
-                </button>
+        <div className="fixed inset-0 bg-white z-50 flex flex-col">
+          {/* Header */}
+          <div className="flex items-center justify-between p-6 border-b-2 border-blue-500 bg-gray-50">
+            <h3 className="text-2xl font-semibold text-gray-900">
+              {editingProduct ? 'Editar Producto' : 'Nuevo Producto'}
+            </h3>
+            <button
+              onClick={closeModal}
+              className="p-3 text-gray-400 hover:text-gray-600 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+
+          {/* Contenido principal */}
+          <div className="flex-1 p-6 overflow-hidden">
+            <div className="grid grid-cols-3 gap-4 h-full">
+              {/* Columna 1 - Información Básica */}
+              <div className="flex flex-col h-full">
+                <div className="border-2 border-green-500 rounded-lg p-3 bg-green-50 mb-3">
+                  <h4 className="text-sm font-semibold text-green-800 mb-3 border-b-2 border-green-300 pb-2">
+                    Información Básica
+                  </h4>
+                  
+                  <div className="space-y-3">
+                    {/* Nombre */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Nombre *
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        placeholder="Nombre del producto"
+                      />
+                    </div>
+
+                    {/* Precio */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Precio *
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={formData.price}
+                        onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        placeholder="0.00"
+                      />
+                    </div>
+
+                    {/* Categoría */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Categoría *
+                      </label>
+                      <select
+                        value={formData.categoryId}
+                        onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      >
+                        <option value="">Seleccionar categoría</option>
+                        {categories.map(category => (
+                          <option key={category.id} value={category.id}>
+                            {category.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Impuesto */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Impuesto *
+                      </label>
+                      <select
+                        value={formData.taxId}
+                        onChange={(e) => setFormData({ ...formData, taxId: e.target.value })}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      >
+                        <option value="">Seleccionar impuesto</option>
+                        {config.taxes.map(tax => (
+                          <option key={tax.id} value={tax.id}>
+                            {tax.name} ({tax.rate * 100}%)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Estado activo */}
+                    <div>
+                      <label className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          checked={formData.isActive}
+                          onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                        />
+                        <span className="text-xs text-gray-700">Producto activo</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Color de fondo */}
+                <div className="border-2 border-purple-500 rounded-lg p-3 bg-purple-50">
+                  <h4 className="text-sm font-semibold text-purple-800 mb-3 border-b-2 border-purple-300 pb-2">
+                    Apariencia
+                  </h4>
+                  <ColorPicker
+                    value={formData.backgroundColor}
+                    onChange={(color) => setFormData({ ...formData, backgroundColor: color })}
+                    label="Color de fondo del botón"
+                  />
+                </div>
               </div>
 
-              <div className="space-y-4">
-                {/* Nombre */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Nombre *
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    placeholder="Nombre del producto"
-                  />
-                </div>
-
-                {/* Precio */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Precio *
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={formData.price}
-                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    placeholder="0.00"
-                  />
-                </div>
-
-                {/* Categoría */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Categoría *
-                  </label>
-                  <select
-                    value={formData.categoryId}
-                    onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  >
-                    <option value="">Seleccionar categoría</option>
-                    {categories.map(category => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Descripción */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+              {/* Columna 2 - Descripción y Tarifas */}
+              <div className="flex flex-col h-full">
+                {/* Descripción - Más pequeña */}
+                <div className="border-2 border-blue-500 rounded-lg p-3 bg-blue-50 mb-3">
+                  <h4 className="text-sm font-semibold text-blue-800 mb-3 border-b-2 border-blue-300 pb-2">
                     Descripción
-                  </label>
+                  </h4>
                   <textarea
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    rows={3}
+                    className="w-full h-24 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
                     placeholder="Descripción opcional del producto"
                   />
                 </div>
 
-                {/* Color de fondo */}
-                <ColorPicker
-                  value={formData.backgroundColor}
-                  onChange={(color) => setFormData({ ...formData, backgroundColor: color })}
-                  label="Color de fondo del botón"
-                />
-
-                {/* Gestor de tarifas */}
-                <ProductTariffManager
-                  tariffs={productTariffs}
-                  onChange={setProductTariffs}
-                />
-
-                {/* Gestor de combinaciones */}
-                <ProductCombinationManager
-                  combinations={productCombinations}
-                  categories={categories}
-                  products={products}
-                  onChange={setProductCombinations}
-                />
-
-                {/* Estado activo */}
-                <div>
-                  <label className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={formData.isActive}
-                      onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                      className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                {/* Tarifas - Debajo de la descripción */}
+                <div className="border-2 border-orange-500 rounded-lg p-3 bg-orange-50 flex-1">
+                  <h4 className="text-sm font-semibold text-orange-800 mb-3 border-b-2 border-orange-300 pb-2">
+                    Tarifas del Producto
+                  </h4>
+                  <div className="h-full overflow-y-auto">
+                    <ProductTariffManager
+                      tariffs={productTariffs}
+                      onChange={setProductTariffs}
                     />
-                    <span className="text-sm text-gray-700">Producto activo</span>
-                  </label>
+                  </div>
                 </div>
               </div>
 
-              {/* Botones */}
-              <div className="flex justify-end space-x-3 mt-6">
-                <button
-                  onClick={closeModal}
-                  className="px-6 py-4 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors min-h-[48px] flex items-center justify-center text-base font-medium"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleSave}
-                  className="px-6 py-4 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center space-x-2 min-h-[48px] text-base font-medium"
-                >
-                  <Save className="w-5 h-5" />
-                  <span>Guardar</span>
-                </button>
+              {/* Columna 3 - Combinaciones */}
+              <div className="flex flex-col h-full">
+                <div className="border-2 border-indigo-500 rounded-lg p-3 bg-indigo-50 flex-1">
+                  <h4 className="text-sm font-semibold text-indigo-800 mb-3 border-b-2 border-indigo-300 pb-2">
+                    Combinaciones
+                  </h4>
+                  <div className="h-[600px] overflow-y-auto">
+                    <ProductCombinationManager
+                      combinations={productCombinations}
+                      categories={categories}
+                      products={products}
+                      onChange={setProductCombinations}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
+          </div>
+
+          {/* Botones */}
+          <div className="flex justify-end space-x-3 p-6 border-t-2 border-blue-500 bg-gray-50">
+            <button
+              onClick={closeModal}
+              className="px-6 py-4 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors min-h-[48px] flex items-center justify-center text-base font-medium"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleSave}
+              className="px-6 py-4 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center space-x-2 min-h-[48px] text-base font-medium"
+            >
+              <Save className="w-5 h-5" />
+              <span>Guardar</span>
+            </button>
           </div>
         </div>
       )}

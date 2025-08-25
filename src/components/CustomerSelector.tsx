@@ -22,6 +22,12 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({
 
   // Filtrar clientes basado en el término de búsqueda
   const filteredCustomers = searchTerm ? searchCustomers(searchTerm) : customers;
+  
+  // Debug logs
+  console.log('CustomerSelector - isOpen:', isOpen);
+  console.log('CustomerSelector - customers:', customers.length);
+  console.log('CustomerSelector - filteredCustomers:', filteredCustomers.length);
+  console.log('CustomerSelector - searchTerm:', searchTerm);
 
   // Cerrar dropdown cuando se hace clic fuera
   useEffect(() => {
@@ -38,6 +44,7 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({
   }, []);
 
   const handleCustomerSelect = (customer: Customer) => {
+    console.log('Cliente seleccionado:', customer);
     onCustomerSelect(customer);
     setIsOpen(false);
     setSearchTerm('');
@@ -59,7 +66,10 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({
     <div className="relative" ref={dropdownRef}>
       {/* Campo de selección */}
       <div
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => {
+          console.log('Click en selector de cliente, isOpen:', isOpen);
+          setIsOpen(!isOpen);
+        }}
         className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white shadow-sm transition-all duration-200 hover:shadow-md cursor-pointer flex items-center justify-between"
       >
         <div className="flex items-center space-x-3 min-w-0 flex-1">
@@ -98,14 +108,22 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({
             </button>
           )}
           <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+          {isOpen && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-blue-500 text-white text-xs px-2 py-1 rounded">
+              Dropdown abierto
+            </div>
+          )}
         </div>
       </div>
 
       {/* Dropdown */}
       {isOpen && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-50 max-h-80 overflow-hidden">
-          {/* Barra de búsqueda */}
-          <div className="p-3 border-b border-gray-100">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white border-2 border-blue-300 rounded-xl shadow-xl z-50 overflow-hidden" style={{ zIndex: 9999, minHeight: '200px', maxHeight: '400px' }}>
+                      {/* Barra de búsqueda */}
+            <div className="p-3 border-b border-gray-100 bg-blue-50">
+              <div className="text-xs text-blue-600 mb-2 font-medium">
+                🔍 Dropdown abierto - {filteredCustomers.length} cliente(s) encontrado(s)
+              </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <input
@@ -120,12 +138,15 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({
           </div>
 
           {/* Lista de clientes */}
-          <div className="max-h-60 overflow-y-auto">
+          <div className="overflow-y-auto" style={{ minHeight: '150px', maxHeight: '300px' }}>
             {filteredCustomers.length === 0 ? (
-              <div className="p-4 text-center text-gray-500">
-                <User className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                <p className="text-sm">
+              <div className="p-6 text-center text-gray-500" style={{ minHeight: '120px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+                <User className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                <p className="text-base font-medium mb-2">
                   {searchTerm ? 'No se encontraron clientes' : 'No hay clientes registrados'}
+                </p>
+                <p className="text-sm text-gray-400">
+                  {searchTerm ? 'Intenta con otro término de búsqueda' : 'Ve a la sección Clientes para crear algunos'}
                 </p>
               </div>
             ) : (
@@ -133,8 +154,14 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({
                 {filteredCustomers.map((customer) => (
                   <div
                     key={customer.id}
-                    onClick={() => handleCustomerSelect(customer)}
-                    className="px-4 py-3 hover:bg-blue-50 cursor-pointer transition-colors border-b border-gray-50 last:border-b-0"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      console.log('Click en cliente:', customer.name);
+                      handleCustomerSelect(customer);
+                    }}
+                    className="px-4 py-4 hover:bg-blue-50 cursor-pointer transition-colors border-b border-gray-50 last:border-b-0 active:bg-blue-100"
+                    style={{ minHeight: '80px' }}
                   >
                     <div className="flex items-center space-x-3">
                       <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">

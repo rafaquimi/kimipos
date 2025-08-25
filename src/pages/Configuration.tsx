@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Settings, Building, Archive, Plus, Save, Trash2, Move, Flower, Coffee, SlidersHorizontal, Users, Search, Edit, CreditCard, Mail, Phone, MapPin, Gift } from 'lucide-react';
+import { Settings, Building, Archive, Plus, Save, Trash2, Move, Flower, Coffee, SlidersHorizontal, Users, Search, Edit, CreditCard, Mail, Phone, MapPin, Gift, X } from 'lucide-react';
 import { useTables, SalonData } from '../contexts/TableContext';
 import { useConfig } from '../contexts/ConfigContext';
 import { useProducts } from '../contexts/ProductContext';
@@ -30,6 +30,15 @@ const ConfigurationPage: React.FC = () => {
   const [isIncentiveModalOpen, setIsIncentiveModalOpen] = useState(false);
   const [selectedIncentive, setSelectedIncentive] = useState<BalanceIncentive | null>(null);
   const { allIncentives, addIncentive, updateIncentive, deleteIncentive } = useBalanceIncentives();
+
+  // Estados para gestión de impuestos
+  const [isTaxModalOpen, setIsTaxModalOpen] = useState(false);
+  const [selectedTax, setSelectedTax] = useState<any>(null);
+  const [taxFormData, setTaxFormData] = useState({
+    name: '',
+    rate: 0,
+    description: ''
+  });
 
   useEffect(() => {
     if (location.pathname.includes('/configuration/salons') || location.pathname.includes('/tables')) {
@@ -63,7 +72,18 @@ const ConfigurationPage: React.FC = () => {
   } = useTables();
   const { categories } = useProducts();
   
-  const { config, updateConfig, getModifiersForCategory, updateCategoryModifiers } = useConfig();
+  const { 
+    config, 
+    updateConfig, 
+    getModifiersForCategory, 
+    updateCategoryModifiers,
+    addTax,
+    updateTax,
+    deleteTax,
+    setDefaultTax,
+    getTaxById,
+    getDefaultTax
+  } = useConfig();
   const [configValues, setConfigValues] = useState(config);
 
   useEffect(() => {
@@ -141,61 +161,363 @@ const ConfigurationPage: React.FC = () => {
 
   const renderGeneral = () => (
     <div className="space-y-6">
-      <div className="card p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Información del Restaurante</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Nombre del Restaurante
-            </label>
-            <input
-              type="text"
-              value={configValues.restaurantName}
-              onChange={(e) => setConfigValues({ ...configValues, restaurantName: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-            />
+      {/* Layout de dos columnas para Datos del Negocio e Impuestos */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Datos del Negocio */}
+        <div className="card p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Datos del Negocio</h3>
+          <p className="text-sm text-gray-600 mb-4">Esta información aparecerá en los tickets PDF generados</p>
+          
+          <div className="grid grid-cols-1 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Nombre Fiscal
+              </label>
+              <input
+                type="text"
+                value={configValues.businessData?.fiscalName || ''}
+                onChange={(e) => setConfigValues({
+                  ...configValues,
+                  businessData: {
+                    ...configValues.businessData,
+                    fiscalName: e.target.value
+                  }
+                })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                placeholder="Nombre fiscal completo"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                CIF/NIF
+              </label>
+              <input
+                type="text"
+                value={configValues.businessData?.taxId || ''}
+                onChange={(e) => setConfigValues({
+                  ...configValues,
+                  businessData: {
+                    ...configValues.businessData,
+                    taxId: e.target.value
+                  }
+                })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                placeholder="CIF o NIF del negocio"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Moneda
+              </label>
+              <select
+                value={configValues.currency}
+                onChange={(e) => setConfigValues({ ...configValues, currency: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              >
+                <option value="MXN">Peso Mexicano (MXN)</option>
+                <option value="USD">Dólar Americano (USD)</option>
+                <option value="EUR">Euro (EUR)</option>
+              </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Nombre Comercial
+              </label>
+              <input
+                type="text"
+                value={configValues.businessData?.commercialName || ''}
+                onChange={(e) => setConfigValues({
+                  ...configValues,
+                  businessData: {
+                    ...configValues.businessData,
+                    commercialName: e.target.value
+                  }
+                })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                placeholder="Nombre comercial"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Teléfono
+              </label>
+              <input
+                type="tel"
+                value={configValues.businessData?.phone || ''}
+                onChange={(e) => setConfigValues({
+                  ...configValues,
+                  businessData: {
+                    ...configValues.businessData,
+                    phone: e.target.value
+                  }
+                })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                placeholder="Teléfono del negocio"
+              />
+            </div>
+            
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Dirección
+              </label>
+              <input
+                type="text"
+                value={configValues.businessData?.address || ''}
+                onChange={(e) => setConfigValues({
+                  ...configValues,
+                  businessData: {
+                    ...configValues.businessData,
+                    address: e.target.value
+                  }
+                })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                placeholder="Dirección completa del negocio"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email
+              </label>
+              <input
+                type="email"
+                value={configValues.businessData?.email || ''}
+                onChange={(e) => setConfigValues({
+                  ...configValues,
+                  businessData: {
+                    ...configValues.businessData,
+                    email: e.target.value
+                  }
+                })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                placeholder="Email del negocio"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Población
+              </label>
+              <input
+                type="text"
+                value={configValues.businessData?.city || ''}
+                onChange={(e) => setConfigValues({
+                  ...configValues,
+                  businessData: {
+                    ...configValues.businessData,
+                    city: e.target.value
+                  }
+                })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                placeholder="Ciudad o población"
+              />
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Moneda
-            </label>
-            <select
-              value={configValues.currency}
-              onChange={(e) => setConfigValues({ ...configValues, currency: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-            >
-              <option value="MXN">Peso Mexicano (MXN)</option>
-              <option value="USD">Dólar Americano (USD)</option>
-              <option value="EUR">Euro (EUR)</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Tasa de IVA (%)
-            </label>
-            <input
-              type="number"
-              min="0"
-              max="100"
-              step="0.01"
-              value={configValues.taxRate * 100}
-              onChange={(e) => {
-                const value = Math.max(0, Math.min(100, parseFloat(e.target.value)));
-                setConfigValues({ ...configValues, taxRate: value / 100 });
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-            />
+          
+          <div className="mt-6">
+            <button onClick={handleSave} className="btn btn-primary flex items-center space-x-2">
+              <Save className="w-4 h-4" />
+              <span>Guardar Datos del Negocio</span>
+            </button>
           </div>
         </div>
-        <div className="mt-6">
-          <button onClick={handleSave} className="btn btn-primary flex items-center space-x-2">
-            <Save className="w-4 h-4" />
-            <span>Guardar Cambios</span>
-          </button>
+
+        {/* Gestión de Impuestos */}
+        <div className="card p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Gestión de Impuestos</h3>
+              <p className="text-sm text-gray-600 mt-1">Administra los diferentes tipos de impuestos para productos y recargas</p>
+            </div>
+            <button
+              onClick={() => {
+                setSelectedTax(null);
+                setTaxFormData({ name: '', rate: 0, description: '' });
+                setIsTaxModalOpen(true);
+              }}
+              className="btn btn-primary flex items-center space-x-2"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Nuevo Impuesto</span>
+            </button>
+          </div>
+
+          {/* Lista de impuestos */}
+          <div className="space-y-4">
+            {config.taxes.map((tax) => (
+              <div key={tax.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-2">
+                      <div className={`w-3 h-3 rounded-full ${tax.isDefault ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                      <div>
+                        <h4 className="font-medium text-gray-900">{tax.name}</h4>
+                        <p className="text-sm text-gray-600">
+                          {tax.rate * 100}% {tax.description && `- ${tax.description}`}
+                        </p>
+                      </div>
+                    </div>
+                    {tax.isDefault && (
+                      <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                        Por defecto
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    {!tax.isDefault && (
+                      <button
+                        onClick={() => setDefaultTax(tax.id)}
+                        className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
+                      >
+                        Establecer por defecto
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setSelectedTax(tax);
+                        setTaxFormData({
+                          name: tax.name,
+                          rate: tax.rate * 100,
+                          description: tax.description || ''
+                        });
+                        setIsTaxModalOpen(true);
+                      }}
+                      className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    {!tax.isDefault && (
+                      <button
+                        onClick={() => {
+                          if (config.taxes.length > 1) {
+                            deleteTax(tax.id);
+                            toast.success('Impuesto eliminado');
+                          } else {
+                            toast.error('No se puede eliminar el último impuesto');
+                          }
+                        }}
+                        className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Modal para agregar/editar impuesto */}
+          {isTaxModalOpen && (
+            <div className="fixed inset-0 z-50 overflow-y-auto">
+              <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+                <div className="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75" onClick={() => setIsTaxModalOpen(false)} />
+                
+                <div className="inline-block w-full max-w-md my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-xl rounded-lg">
+                  <div className="flex items-center justify-between p-6 border-b border-gray-200">
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      {selectedTax ? 'Editar Impuesto' : 'Nuevo Impuesto'}
+                    </h3>
+                    <button
+                      onClick={() => setIsTaxModalOpen(false)}
+                      className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  
+                  <div className="p-6 space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Nombre del Impuesto
+                      </label>
+                      <input
+                        type="text"
+                        value={taxFormData.name}
+                        onChange={(e) => setTaxFormData({ ...taxFormData, name: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        placeholder="Ej: IVA General"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Tasa (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        value={taxFormData.rate}
+                        onChange={(e) => setTaxFormData({ ...taxFormData, rate: parseFloat(e.target.value) || 0 })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        placeholder="21"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Descripción (opcional)
+                      </label>
+                      <input
+                        type="text"
+                        value={taxFormData.description}
+                        onChange={(e) => setTaxFormData({ ...taxFormData, description: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        placeholder="Descripción del impuesto"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-end space-x-3 p-6 border-t border-gray-200">
+                    <button
+                      onClick={() => setIsTaxModalOpen(false)}
+                      className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (!taxFormData.name.trim()) {
+                          toast.error('El nombre del impuesto es obligatorio');
+                          return;
+                        }
+                        
+                        if (selectedTax) {
+                          updateTax(selectedTax.id, {
+                            name: taxFormData.name,
+                            rate: taxFormData.rate / 100,
+                            description: taxFormData.description
+                          });
+                          toast.success('Impuesto actualizado');
+                                                 } else {
+                           addTax({
+                             name: taxFormData.name,
+                             rate: taxFormData.rate / 100,
+                             description: taxFormData.description,
+                             isDefault: false
+                           });
+                           toast.success('Impuesto agregado');
+                         }
+                        setIsTaxModalOpen(false);
+                      }}
+                      className="btn btn-primary"
+                    >
+                      {selectedTax ? 'Actualizar' : 'Agregar'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
-
-
     </div>
   );
 

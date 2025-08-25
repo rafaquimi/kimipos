@@ -48,6 +48,7 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
             categoryId: 'cat-1',
             description: 'Refresco de cola 350ml',
             backgroundColor: '#dc2626',
+            taxId: 'default-tax',
             tariffs: [
               { id: '1-1', name: '350ml', price: 25.00, isDefault: true }
             ],
@@ -62,6 +63,7 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
             categoryId: 'cat-1',
             description: 'Refresco de limón 350ml',
             backgroundColor: '#16a34a',
+            taxId: 'default-tax',
             isActive: true,
             createdAt: new Date(),
             updatedAt: new Date()

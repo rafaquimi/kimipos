@@ -1,9 +1,30 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
+export interface TaxRate {
+  id: string;
+  name: string;
+  rate: number;
+  isDefault: boolean;
+  description?: string;
+}
+
 interface RestaurantConfig {
   restaurantName: string;
   currency: string;
-  taxRate: number;
+  taxRate: number; // Mantener para compatibilidad
+  // Sistema de impuestos
+  taxes: TaxRate[];
+  defaultTaxId: string;
+  // Datos del negocio
+  businessData: {
+    fiscalName: string;
+    taxId: string;
+    commercialName: string;
+    address: string;
+    phone: string;
+    email: string;
+    city: string;
+  };
   modifiers?: {
     global: string[];
     byCategory: Record<string, string[]>; // categoryId -> modifiers
@@ -17,6 +38,13 @@ interface ConfigContextType {
   getTaxRate: () => number;
   getModifiersForCategory: (categoryId?: string) => string[];
   updateCategoryModifiers: (categoryId: string, modifiers: string[]) => void;
+  // Funciones para gestión de impuestos
+  addTax: (tax: Omit<TaxRate, 'id'>) => void;
+  updateTax: (id: string, tax: Partial<TaxRate>) => void;
+  deleteTax: (id: string) => void;
+  setDefaultTax: (id: string) => void;
+  getTaxById: (id: string) => TaxRate | undefined;
+  getDefaultTax: () => TaxRate | undefined;
 }
 
 const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
@@ -26,17 +54,64 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const savedConfig = localStorage.getItem('restaurantConfig');
     if (savedConfig) {
       const parsed = JSON.parse(savedConfig);
+      
+      // Migrar impuestos existentes si no existen
+      let taxes = parsed.taxes || [];
+      if (taxes.length === 0 && parsed.taxRate) {
+        // Crear impuesto por defecto basado en el taxRate existente
+        const defaultTax: TaxRate = {
+          id: 'default-tax',
+          name: 'IVA General',
+          rate: parsed.taxRate,
+          isDefault: true,
+          description: 'Impuesto al Valor Agregado'
+        };
+        taxes = [defaultTax];
+      }
+      
       return {
         restaurantName: parsed.restaurantName ?? 'Mi Restaurante',
         currency: parsed.currency ?? 'MXN',
         taxRate: parsed.taxRate ?? 0.16,
+        taxes: taxes,
+        defaultTaxId: parsed.defaultTaxId ?? (taxes.find(t => t.isDefault)?.id || ''),
+        businessData: parsed.businessData ?? {
+          fiscalName: '',
+          taxId: '',
+          commercialName: '',
+          address: '',
+          phone: '',
+          email: '',
+          city: '',
+        },
         modifiers: parsed.modifiers ?? { global: [], byCategory: {} }
       } as RestaurantConfig;
     }
+    
+    // Configuración por defecto con impuesto inicial
+    const defaultTax: TaxRate = {
+      id: 'default-tax',
+      name: 'IVA General',
+      rate: 0.16,
+      isDefault: true,
+      description: 'Impuesto al Valor Agregado'
+    };
+    
     return {
       restaurantName: 'Mi Restaurante',
       currency: 'MXN',
       taxRate: 0.16,
+      taxes: [defaultTax],
+      defaultTaxId: 'default-tax',
+      businessData: {
+        fiscalName: '',
+        taxId: '',
+        commercialName: '',
+        address: '',
+        phone: '',
+        email: '',
+        city: '',
+      },
       modifiers: { global: [], byCategory: {} }
     };
   });
@@ -85,13 +160,82 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     localStorage.setItem('restaurantConfig', JSON.stringify(next));
   };
 
+  // Funciones para gestión de impuestos
+  const addTax = (tax: Omit<TaxRate, 'id'>) => {
+    const newTax: TaxRate = {
+      ...tax,
+      id: `tax-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    };
+    
+    const updatedTaxes = [...config.taxes, newTax];
+    const updatedConfig = { ...config, taxes: updatedTaxes };
+    
+    // Si es el primer impuesto, establecerlo como por defecto
+    if (updatedTaxes.length === 1) {
+      updatedConfig.defaultTaxId = newTax.id;
+    }
+    
+    setConfig(updatedConfig);
+    localStorage.setItem('restaurantConfig', JSON.stringify(updatedConfig));
+  };
+
+  const updateTax = (id: string, tax: Partial<TaxRate>) => {
+    const updatedTaxes = config.taxes.map(t => 
+      t.id === id ? { ...t, ...tax } : t
+    );
+    const updatedConfig = { ...config, taxes: updatedTaxes };
+    setConfig(updatedConfig);
+    localStorage.setItem('restaurantConfig', JSON.stringify(updatedConfig));
+  };
+
+  const deleteTax = (id: string) => {
+    const updatedTaxes = config.taxes.filter(t => t.id !== id);
+    
+    // Si se elimina el impuesto por defecto, establecer el primero como por defecto
+    let updatedConfig = { ...config, taxes: updatedTaxes };
+    if (id === config.defaultTaxId && updatedTaxes.length > 0) {
+      updatedConfig.defaultTaxId = updatedTaxes[0].id;
+    }
+    
+    setConfig(updatedConfig);
+    localStorage.setItem('restaurantConfig', JSON.stringify(updatedConfig));
+  };
+
+  const setDefaultTax = (id: string) => {
+    const updatedTaxes = config.taxes.map(t => ({
+      ...t,
+      isDefault: t.id === id
+    }));
+    const updatedConfig = { 
+      ...config, 
+      taxes: updatedTaxes,
+      defaultTaxId: id
+    };
+    setConfig(updatedConfig);
+    localStorage.setItem('restaurantConfig', JSON.stringify(updatedConfig));
+  };
+
+  const getTaxById = (id: string): TaxRate | undefined => {
+    return config.taxes.find(t => t.id === id);
+  };
+
+  const getDefaultTax = (): TaxRate | undefined => {
+    return config.taxes.find(t => t.id === config.defaultTaxId);
+  };
+
   const value: ConfigContextType = {
     config,
     updateConfig,
     getCurrencySymbol,
     getTaxRate,
     getModifiersForCategory,
-    updateCategoryModifiers
+    updateCategoryModifiers,
+    addTax,
+    updateTax,
+    deleteTax,
+    setDefaultTax,
+    getTaxById,
+    getDefaultTax
   };
 
   return (

@@ -301,6 +301,17 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 			});
 			return n;
 		});
+
+		// Limpiar los cobros parciales de todas las mesas del grupo
+		setPartialPayments(prev => {
+			const n = { ...prev };
+			tablesToClear.forEach(tId => {
+				delete n[tId];
+			});
+			return n;
+		});
+
+		console.log(`Cobros parciales limpiados para mesas: ${tablesToClear.join(', ')}`);
 	};
 
 
@@ -631,23 +642,11 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		const table = getTableById(tableId);
 		if (!table) return;
 		
-		// Calcular el nuevo total restando el cobro parcial
-		const currentTotal = table.currentOrder?.total || 0;
-		const newTotal = Math.max(0, currentTotal - partialAmount);
+		// NO modificar el total original de la mesa
+		// El total original debe mantenerse para calcular correctamente el pendiente
+		// Los cobros parciales se manejan por separado
 		
-		// Actualizar el total en la mesa
-		setSalons(prev => prev.map(s => s.id !== targetSalonId ? s : ({
-			...s,
-			tables: s.tables.map(t => t.id === tableId ? ({
-				...t,
-				currentOrder: {
-					...t.currentOrder,
-					total: newTotal
-				}
-			}) : t)
-		})));
-		
-		console.log(`Total actualizado para mesa ${tableId}: ${currentTotal} -> ${newTotal} (cobro parcial: ${partialAmount})`);
+		console.log(`Cobro parcial registrado para mesa ${tableId}: ${partialAmount}. Total original mantenido: ${table.currentOrder?.total || 0}`);
 	};
 
 	const value: TableContextType = {

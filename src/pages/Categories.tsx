@@ -12,7 +12,8 @@ import {
   Power,
   DollarSign
 } from 'lucide-react';
-import { useProducts, Category, Product } from '../contexts/ProductContext';
+import { useProducts } from '../contexts/ProductContext';
+import { Category, Product } from '../types/product';
 import { ProductCombination } from '../types/product';
 import { useConfig } from '../contexts/ConfigContext';
 import NumericKeypad from '../components/NumericKeypad';

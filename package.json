@@ -1,60 +1,21 @@
 {
   "name": "kimipos",
   "version": "1.0.0",
-  "description": "Sistema POS para restaurantes con funcionalidad offline",
-  "main": "public/electron.js",
+  "description": "Sistema POS para restaurantes",
+  "main": "electron/main.js",
   "homepage": "./",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "tsc && vite build",
     "preview": "vite preview",
-    "serve": "vite preview",
     "electron": "electron .",
-    "electron-dev": "ELECTRON_IS_DEV=true electron .",
-    "build-electron": "npm run build && electron-builder",
-    "dist": "npm run build && electron-builder --publish=never",
-    "package-win": "npm run build && npx electron-packager . KimiPOS --platform=win32 --arch=x64 --out=dist-electron --overwrite --ignore=node_modules/(?!electron)",
-    "package-win-ia32": "npm run build && npx electron-packager . KimiPOS --platform=win32 --arch=ia32 --out=dist-electron --overwrite",
-    "package-all": "npm run build && npx electron-packager . KimiPOS --all --out=dist-electron --overwrite"
+    "electron-dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron-pack": "npm run build && electron-builder",
+    "electron-pack-win": "npm run build && electron-builder --win",
+    "electron-pack-mac": "npm run build && electron-builder --mac",
+    "electron-pack-linux": "npm run build && electron-builder --linux",
+    "dist": "npm run build && electron-builder --publish=never"
   },
-  "dependencies": {
-    "clsx": "^1.2.1",
-    "date-fns": "^2.29.3",
-    "dexie": "^3.2.3",
-    "dexie-react-hooks": "^1.1.6",
-    "electron-is-dev": "^3.0.1",
-    "framer-motion": "^10.12.4",
-    "jspdf": "^3.0.1",
-    "lucide-react": "^0.263.1",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-hot-toast": "^2.4.1",
-    "react-router-dom": "^6.8.0"
-  },
-  "devDependencies": {
-    "@types/jspdf": "^1.3.3",
-    "@types/react": "^18.0.28",
-    "@types/react-dom": "^18.0.11",
-    "@vitejs/plugin-react": "^4.0.0",
-    "autoprefixer": "^10.4.14",
-    "electron": "^37.3.1",
-    "electron-builder": "^26.0.12",
-    "electron-packager": "^17.1.2",
-    "postcss": "^8.4.23",
-    "tailwindcss": "^3.3.2",
-    "typescript": "^5.0.2",
-    "vite": "^4.3.2",
-    "vite-plugin-pwa": "^0.14.7"
-  },
-  "keywords": [
-    "pos",
-    "restaurant",
-    "offline",
-    "react",
-    "typescript"
-  ],
-  "author": "KimiPOS",
-  "license": "MIT",
   "build": {
     "appId": "com.kimipos.app",
     "productName": "KimiPOS",
@@ -63,36 +24,65 @@
     },
     "files": [
       "dist/**/*",
-      "public/electron.js",
+      "electron/**/*",
       "node_modules/**/*"
     ],
     "win": {
       "target": [
         {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "dir",
+          "target": "nsis",
           "arch": [
             "x64"
           ]
         }
       ],
-      "forceCodeSigning": false
+      "icon": null,
+      "forceCodeSigning": false,
+      "signAndEditExecutable": false
     },
-    "portable": {
-      "artifactName": "KimiPOS-Portable.exe"
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "KimiPOS"
     },
     "mac": {
       "target": "dmg",
-      "icon": "public/favicon.ico"
+      "icon": "public/icon.icns"
     },
     "linux": {
       "target": "AppImage",
-      "icon": "public/favicon.ico"
+      "icon": "public/icon.png"
     }
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
+    "@typescript-eslint/eslint-plugin": "^6.14.0",
+    "@typescript-eslint/parser": "^6.14.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^8.2.2",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1",
+    "eslint": "^8.55.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.5",
+    "typescript": "^5.2.2",
+    "vite": "^5.0.8",
+    "wait-on": "^7.2.0"
+  },
+  "dependencies": {
+    "autoprefixer": "^10.4.0",
+    "dexie": "^3.2.4",
+    "dexie-react-hooks": "^1.1.7",
+    "jspdf": "^2.5.1",
+    "lucide-react": "^0.294.0",
+    "postcss": "^8.4.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-hot-toast": "^2.4.1",
+    "react-router-dom": "^6.20.1",
+    "tailwindcss": "^3.4.0"
   }
 }

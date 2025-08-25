@@ -1,65 +1,46 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { VitePWA } from 'vite-plugin-pwa'
+import { resolve } from 'path'
 
+// https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [
-    react(),
-    VitePWA({
-      registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
-      manifest: {
-        name: 'KimiPOS - Sistema de Gestión para Restaurantes',
-        short_name: 'KimiPOS',
-        description: 'Sistema POS offline para gestión de restaurantes',
-        theme_color: '#1e40af',
-        background_color: '#ffffff',
-        display: 'standalone',
-        orientation: 'landscape',
-        icons: [
-          {
-            src: 'pwa-192x192.png',
-            sizes: '192x192',
-            type: 'image/png'
-          },
-          {
-            src: 'pwa-512x512.png',
-            sizes: '512x512',
-            type: 'image/png'
-          }
-        ]
-      },
-      workbox: {
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/api\./,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 60 * 60 * 24 // 24 horas
-              }
-            }
-          }
-        ]
-      }
-    })
-  ],
+  plugins: [react()],
   base: './',
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
+    sourcemap: false, // Deshabilitar source maps para producción
+    minify: 'terser', // Usar terser para mejor minificación
+    terserOptions: {
+      compress: {
+        drop_console: true, // Eliminar console.log en producción
+        drop_debugger: true,
+        pure_funcs: ['console.log', 'console.info', 'console.debug']
+      },
+      mangle: {
+        toplevel: true // Ofuscar nombres de variables y funciones
+      }
+    },
     rollupOptions: {
       output: {
-        manualChunks: undefined
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          router: ['react-router-dom'],
+          ui: ['lucide-react', 'react-hot-toast'],
+          database: ['dexie', 'dexie-react-hooks'],
+          pdf: ['jspdf']
+        }
       }
     }
   },
   resolve: {
     alias: {
-      '@': '/src'
+      '@': resolve(__dirname, 'src')
     }
+  },
+  server: {
+    port: 5173,
+    host: true
   }
 })
 

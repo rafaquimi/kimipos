@@ -37,7 +37,7 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   
   const { salons, activeSalonId, setActiveSalon, tables, decor, updateTableTemporaryName, updateTableStatus, addNamedAccount } = useTables();
-  const { customers, getCustomerByCardCode } = useCustomers();
+  const { customers, getCustomerByCardCode, searchCustomers } = useCustomers();
   const navigate = useNavigate();
 
   // Limpiar estado del modal de nombre cuando se cierre el modal principal
@@ -48,6 +48,14 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
       setTemporaryName('');
     }
   }, [isOpen]);
+
+  // Debug: mostrar información de clientes
+  useEffect(() => {
+    if (showCustomerNameModal) {
+      console.log('Clientes disponibles:', customers.length);
+      console.log('Clientes:', customers);
+    }
+  }, [showCustomerNameModal, customers]);
 
   const filteredTables = tables.filter(table => {
     const matchesSearch = !searchTerm || 
@@ -524,20 +532,31 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
               <form onSubmit={handleCustomerNameSubmit}>
                 {/* Cliente seleccionado */}
                 {selectedCustomer && (
-                  <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
                     <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-blue-900">
-                          Cliente seleccionado:
-                        </p>
-                        <p className="text-sm text-blue-700">
-                          {selectedCustomer.name} {selectedCustomer.lastName}
-                        </p>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
+                          <User className="w-4 h-4 text-green-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-green-900">
+                            ✅ Cliente seleccionado:
+                          </p>
+                          <p className="text-sm text-green-700">
+                            {selectedCustomer.name} {selectedCustomer.lastName}
+                          </p>
+                          {selectedCustomer.email && (
+                            <p className="text-xs text-green-600">
+                              {selectedCustomer.email}
+                            </p>
+                          )}
+                        </div>
                       </div>
                       <button
                         type="button"
                         onClick={() => setSelectedCustomer(null)}
-                        className="text-blue-500 hover:text-blue-700"
+                        className="text-green-500 hover:text-green-700 p-1 hover:bg-green-100 rounded-full transition-colors"
+                        title="Cambiar cliente"
                       >
                         ✕
                       </button>
@@ -578,9 +597,10 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setShowCustomerSelector(true)}
-                      className="w-full px-4 py-3 border-2 border-dashed border-blue-300 rounded-xl text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-colors text-sm font-medium"
+                      className="w-full px-4 py-3 border-2 border-dashed border-blue-300 rounded-xl text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-colors text-sm font-medium flex items-center justify-center space-x-2"
                     >
-                      📋 Seleccionar Cliente Existente
+                      <User className="w-4 h-4" />
+                      <span>📋 Seleccionar Cliente Existente ({customers.length} disponibles)</span>
                     </button>
                   </div>
                 )}
@@ -655,14 +675,43 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
                 </button>
               </div>
               
-              <CustomerSelector
-                selectedCustomer={selectedCustomer}
-                onCustomerSelect={(customer) => {
-                  setSelectedCustomer(customer);
-                  setShowCustomerSelector(false);
-                }}
-                placeholder="Buscar cliente por nombre, email, teléfono o código de tarjeta..."
-              />
+              <div className="space-y-4">
+                <div className="text-sm text-gray-600 mb-3">
+                  <p>Clientes disponibles: <strong>{customers.length}</strong></p>
+                  {customers.length === 0 && (
+                    <p className="text-orange-600 mt-1">
+                      No hay clientes registrados. Primero crea algunos clientes en la sección "Clientes".
+                    </p>
+                  )}
+                </div>
+                
+                <CustomerSelector
+                  selectedCustomer={selectedCustomer}
+                  onCustomerSelect={(customer) => {
+                    setSelectedCustomer(customer);
+                    setShowCustomerSelector(false);
+                  }}
+                  placeholder="Buscar cliente por nombre, email, teléfono o código de tarjeta..."
+                />
+                
+                {customers.length === 0 && (
+                  <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                    <p className="text-sm text-orange-800">
+                      <strong>💡 Sugerencia:</strong> Ve a la sección "Clientes" para crear algunos clientes primero.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowCustomerSelector(false);
+                        navigate('/customers');
+                      }}
+                      className="mt-2 px-4 py-2 bg-orange-600 text-white rounded-lg text-sm hover:bg-orange-700 transition-colors"
+                    >
+                      Ir a Clientes
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

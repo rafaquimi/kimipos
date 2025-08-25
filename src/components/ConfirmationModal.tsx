@@ -87,7 +87,10 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
             Cancelar
           </button>
           <button
-            onClick={onConfirm}
+            onClick={() => {
+              onConfirm();
+              onClose();
+            }}
             className={`px-6 py-2 text-white font-medium rounded-lg transition-colors flex items-center space-x-2 ${styles.buttonColor}`}
           >
             <Trash2 className="w-4 h-4" />

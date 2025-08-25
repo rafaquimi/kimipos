@@ -44,11 +44,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
       {/* Contenido principal */}
       <div className={`flex-1 flex flex-col`}>
-        <Header 
-          onMenuClick={() => setSidebarOpen(!sidebarOpen)} 
-          showMenu={!isMainPOS}
-        />
-        <main className="flex-1 overflow-hidden">
+        {!isMainPOS && (
+          <Header 
+            onMenuClick={() => setSidebarOpen(!sidebarOpen)} 
+            showMenu={true}
+          />
+        )}
+        <main className={`flex-1 overflow-hidden ${isMainPOS ? 'h-full' : ''}`}>
           {children}
         </main>
       </div>

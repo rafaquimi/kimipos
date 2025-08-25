@@ -8,6 +8,8 @@ interface OrderItem {
   totalPrice: number;
   status: string;
   modifiers?: string[];
+  taxRate?: number;
+  taxName?: string;
 }
 
 interface PartialPayment {
@@ -17,6 +19,13 @@ interface PartialPayment {
   paymentMethod: 'cash' | 'card';
   date: Date;
   receiptNumber: string;
+}
+
+interface TaxBreakdown {
+  taxName: string;
+  taxRate: number;
+  subtotal: number;
+  taxAmount: number;
 }
 
 interface TicketData {
@@ -30,6 +39,7 @@ interface TicketData {
   total: number;
   paymentMethod: 'cash' | 'card';
   cashReceived?: string;
+  cardAmount?: string;
   currencySymbol: string;
   // Información del cliente y saldo
   selectedCustomer?: any;
@@ -42,6 +52,19 @@ interface TicketData {
   // Información de cobros parciales
   partialPayments?: PartialPayment[];
   totalPartialPayments?: number;
+  finalPaymentAmount?: number;
+  // Datos del negocio
+  businessData?: {
+    fiscalName: string;
+    taxId: string;
+    commercialName: string;
+    address: string;
+    phone: string;
+    email: string;
+    city: string;
+  };
+  // Desglose de impuestos
+  taxBreakdown?: TaxBreakdown[];
 }
 
 export const generatePOSTicketPDF = (ticketData: TicketData): string => {
@@ -64,13 +87,76 @@ export const generatePOSTicketPDF = (ticketData: TicketData): string => {
     const isBalancePayment = ticketData.documentType === 'balance_payment';
     const isPartialReceipt = ticketData.documentType === 'partial_receipt';
 
-    // Encabezado del restaurante
+    // Encabezado del restaurante (usar nombre comercial si está disponible)
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    const titleWidth = doc.getTextWidth(ticketData.restaurantName);
+    const restaurantTitle = ticketData.businessData?.commercialName || ticketData.restaurantName || 'Restaurante';
+    const titleWidth = doc.getTextWidth(restaurantTitle);
     const titleX = (pageWidth - titleWidth) / 2;
-    doc.text(ticketData.restaurantName, titleX, yPosition);
+    doc.text(restaurantTitle, titleX, yPosition);
     yPosition += 20;
+    
+    // Datos del negocio si están disponibles
+    if (ticketData.businessData) {
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      
+      // Nombre comercial
+      if (ticketData.businessData.commercialName) {
+        const commercialNameWidth = doc.getTextWidth(ticketData.businessData.commercialName);
+        const commercialNameX = (pageWidth - commercialNameWidth) / 2;
+        doc.text(ticketData.businessData.commercialName, commercialNameX, yPosition);
+        yPosition += 12;
+      }
+      
+      // Nombre fiscal
+      if (ticketData.businessData.fiscalName) {
+        const fiscalNameWidth = doc.getTextWidth(ticketData.businessData.fiscalName);
+        const fiscalNameX = (pageWidth - fiscalNameWidth) / 2;
+        doc.text(ticketData.businessData.fiscalName, fiscalNameX, yPosition);
+        yPosition += 12;
+      }
+      
+      // CIF/NIF
+      if (ticketData.businessData.taxId) {
+        const taxIdWidth = doc.getTextWidth(`CIF/NIF: ${ticketData.businessData.taxId}`);
+        const taxIdX = (pageWidth - taxIdWidth) / 2;
+        doc.text(`CIF/NIF: ${ticketData.businessData.taxId}`, taxIdX, yPosition);
+        yPosition += 12;
+      }
+      
+      // Dirección
+      if (ticketData.businessData.address) {
+        const addressWidth = doc.getTextWidth(ticketData.businessData.address);
+        const addressX = (pageWidth - addressWidth) / 2;
+        doc.text(ticketData.businessData.address, addressX, yPosition);
+        yPosition += 12;
+      }
+      
+      // Ciudad
+      if (ticketData.businessData.city) {
+        const cityWidth = doc.getTextWidth(ticketData.businessData.city);
+        const cityX = (pageWidth - cityWidth) / 2;
+        doc.text(ticketData.businessData.city, cityX, yPosition);
+        yPosition += 12;
+      }
+      
+      // Teléfono
+      if (ticketData.businessData.phone) {
+        const phoneWidth = doc.getTextWidth(`Tel: ${ticketData.businessData.phone}`);
+        const phoneX = (pageWidth - phoneWidth) / 2;
+        doc.text(`Tel: ${ticketData.businessData.phone}`, phoneX, yPosition);
+        yPosition += 12;
+      }
+      
+      // Email
+      if (ticketData.businessData.email) {
+        const emailWidth = doc.getTextWidth(ticketData.businessData.email);
+        const emailX = (pageWidth - emailWidth) / 2;
+        doc.text(ticketData.businessData.email, emailX, yPosition);
+        yPosition += 12;
+      }
+    }
     
     // Título del documento según el tipo
     doc.setFontSize(12);
@@ -177,10 +263,27 @@ export const generatePOSTicketPDF = (ticketData: TicketData): string => {
     doc.text(subtotalText, pageWidth - rightMargin - subtotalWidth, yPosition);
     yPosition += 12;
     
-    const taxText = `IVA: ${ticketData.currencySymbol}${ticketData.tax.toFixed(2)}`;
-    const taxWidth = doc.getTextWidth(taxText);
-    doc.text(taxText, pageWidth - rightMargin - taxWidth, yPosition);
-    yPosition += 12;
+    // Desglose de impuestos si está disponible
+    if (ticketData.taxBreakdown && ticketData.taxBreakdown.length > 0) {
+      // Mostrar cada tipo de IVA por separado
+      ticketData.taxBreakdown.forEach((taxItem) => {
+        const taxSubtotalText = `${taxItem.taxName} (${(taxItem.taxRate * 100).toFixed(0)}%): ${ticketData.currencySymbol}${taxItem.subtotal.toFixed(2)}`;
+        const taxSubtotalWidth = doc.getTextWidth(taxSubtotalText);
+        doc.text(taxSubtotalText, pageWidth - rightMargin - taxSubtotalWidth, yPosition);
+        yPosition += 12;
+        
+        const taxAmountText = `IVA ${(taxItem.taxRate * 100).toFixed(0)}%: ${ticketData.currencySymbol}${taxItem.taxAmount.toFixed(2)}`;
+        const taxAmountWidth = doc.getTextWidth(taxAmountText);
+        doc.text(taxAmountText, pageWidth - rightMargin - taxAmountWidth, yPosition);
+        yPosition += 12;
+      });
+    } else {
+      // Mostrar IVA general si no hay desglose
+      const taxText = `IVA: ${ticketData.currencySymbol}${ticketData.tax.toFixed(2)}`;
+      const taxWidth = doc.getTextWidth(taxText);
+      doc.text(taxText, pageWidth - rightMargin - taxWidth, yPosition);
+      yPosition += 12;
+    }
     
     // Total final - mostrar importe pendiente si hay cobros parciales
     doc.setFontSize(12);
@@ -250,7 +353,8 @@ export const generatePOSTicketPDF = (ticketData: TicketData): string => {
       doc.setFont('helvetica', 'normal');
       
       // Resumen de la cuenta
-      const totalOriginal = ticketData.total + (ticketData.totalPartialPayments || 0);
+      // El total que viene ya es el total original de la mesa
+      const totalOriginal = ticketData.total;
       const summaryText = `Total de la cuenta: ${ticketData.currencySymbol}${totalOriginal.toFixed(2)}`;
       doc.text(summaryText, leftMargin, yPosition);
       yPosition += 12;
@@ -277,7 +381,8 @@ export const generatePOSTicketPDF = (ticketData: TicketData): string => {
         yPosition += 12;
         
         // Monto final cobrado en este ticket
-        const finalPaymentText = `Pago final realizado: ${ticketData.currencySymbol}${ticketData.total.toFixed(2)}`;
+        const finalPaymentAmount = ticketData.finalPaymentAmount || ticketData.total;
+        const finalPaymentText = `Pago final realizado: ${ticketData.currencySymbol}${finalPaymentAmount.toFixed(2)}`;
         const finalPaymentWidth = doc.getTextWidth(finalPaymentText);
         doc.text(finalPaymentText, pageWidth - rightMargin - finalPaymentWidth, yPosition);
         yPosition += 15;
@@ -332,11 +437,31 @@ export const generatePOSTicketPDF = (ticketData: TicketData): string => {
 
     // Método de pago (solo si no se usó saldo o hay monto restante)
     if (!ticketData.useBalance || (ticketData.remainingAmount && ticketData.remainingAmount > 0)) {
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    const paymentMethodText = ticketData.paymentMethod === 'cash' ? 'Efectivo' : 'Tarjeta';
-    doc.text(`Pago: ${paymentMethodText}`, leftMargin, yPosition);
-    yPosition += 20;
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      const paymentMethodText = ticketData.paymentMethod === 'cash' ? 'Efectivo' : 'Tarjeta';
+      doc.text(`Pago: ${paymentMethodText}`, leftMargin, yPosition);
+      yPosition += 12;
+      
+      // Mostrar cantidad recibida
+      if (ticketData.paymentMethod === 'cash' && ticketData.cashReceived) {
+        const amountText = `Recibido: ${ticketData.currencySymbol}${parseFloat(ticketData.cashReceived).toFixed(2)}`;
+        doc.text(amountText, leftMargin, yPosition);
+        yPosition += 12;
+        
+        // Mostrar cambio si es necesario
+        const change = parseFloat(ticketData.cashReceived) - ticketData.total;
+        if (change > 0) {
+          const changeText = `Cambio: ${ticketData.currencySymbol}${change.toFixed(2)}`;
+          doc.text(changeText, leftMargin, yPosition);
+          yPosition += 12;
+        }
+      } else if (ticketData.paymentMethod === 'card' && ticketData.cardAmount) {
+        const amountText = `Cobrado: ${ticketData.currencySymbol}${parseFloat(ticketData.cardAmount).toFixed(2)}`;
+        doc.text(amountText, leftMargin, yPosition);
+        yPosition += 12;
+      }
+      yPosition += 8;
     }
     
     // Información adicional para recargas
@@ -474,4 +599,30 @@ const downloadPDF = (pdfDataUrl: string, fileName: string) => {
   link.click();
   document.body.removeChild(link);
   console.log('PDF descargado');
+};
+
+// Función auxiliar para calcular el desglose de impuestos
+export const calculateTaxBreakdown = (orderItems: OrderItem[]): TaxBreakdown[] => {
+  const taxMap = new Map<string, TaxBreakdown>();
+  
+  orderItems.forEach((item) => {
+    if (item.taxRate !== undefined && item.taxName) {
+      const key = `${item.taxName}-${item.taxRate}`;
+      
+      if (!taxMap.has(key)) {
+        taxMap.set(key, {
+          taxName: item.taxName,
+          taxRate: item.taxRate,
+          subtotal: 0,
+          taxAmount: 0
+        });
+      }
+      
+      const taxItem = taxMap.get(key)!;
+      taxItem.subtotal += item.totalPrice;
+      taxItem.taxAmount += item.totalPrice * item.taxRate;
+    }
+  });
+  
+  return Array.from(taxMap.values()).sort((a, b) => b.taxRate - a.taxRate);
 };
