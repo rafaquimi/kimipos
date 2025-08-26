@@ -15,6 +15,11 @@ interface ProductContextType {
   updateCategory: (id: string, category: Partial<Category>) => void;
   deleteCategory: (id: string) => void;
   getCategoryById: (id: string) => Category | undefined;
+  // Configuración de impresión
+  updateCategoryPrinter: (categoryId: string, printerName: string) => void;
+  updateProductPrinter: (productId: string, printerName: string) => void;
+  getProductPrinter: (productId: string) => string | undefined; // Retorna el nombre de la impresora para el producto
+  configureDefaultPrinters: (printerName: string) => void; // Configura impresora por defecto para todos los productos y categorías
 }
 
 const ProductContext = createContext<ProductContextType | undefined>(undefined);
@@ -1377,6 +1382,63 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return categories.find(c => c.id === id);
   };
 
+  // Funciones de configuración de impresión
+  const updateCategoryPrinter = (categoryId: string, printerName: string) => {
+    // Actualizar la categoría
+    updateCategory(categoryId, { printerName });
+    
+    // Actualizar todos los productos de esta categoría
+    const categoryProducts = getProductsByCategory(categoryId);
+    categoryProducts.forEach(product => {
+      updateProduct(product.id, { printerName });
+    });
+  };
+
+  const updateProductPrinter = (productId: string, printerName: string) => {
+    updateProduct(productId, { printerName });
+  };
+
+  const getProductPrinter = (productId: string): string | undefined => {
+    const product = getProductById(productId);
+    if (!product) return undefined;
+    
+    // Si el producto tiene configuración específica, usarla
+    if (product.printerName) {
+      return product.printerName;
+    }
+    
+    // Si no, usar la configuración de la categoría
+    const category = getCategoryById(product.categoryId);
+    if (category && category.printerName) {
+      return category.printerName;
+    }
+    
+    return undefined; // Sin impresora configurada
+  };
+
+  // Función para configurar impresora por defecto para todos los productos y categorías
+  const configureDefaultPrinters = (printerName: string) => {
+    console.log(`🔧 Configurando impresora "${printerName}" para todos los productos y categorías...`);
+    
+    // Configurar todas las categorías activas
+    categories.forEach(category => {
+      if (category.isActive) {
+        updateCategory(category.id, { printerName });
+        console.log(`   ✅ Categoría "${category.name}" configurada con ${printerName}`);
+      }
+    });
+    
+    // Configurar todos los productos activos
+    products.forEach(product => {
+      if (product.isActive) {
+        updateProduct(product.id, { printerName });
+        console.log(`   ✅ Producto "${product.name}" configurado con ${printerName}`);
+      }
+    });
+    
+    console.log(`✅ Configuración completada. ${printerName} configurada para todos los productos y categorías.`);
+  };
+
   const value: ProductContextType = {
     products,
     categories,
@@ -1388,7 +1450,11 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
     addCategory,
     updateCategory,
     deleteCategory,
-    getCategoryById
+    getCategoryById,
+    updateCategoryPrinter,
+    updateProductPrinter,
+    getProductPrinter,
+    configureDefaultPrinters
   };
 
   return (

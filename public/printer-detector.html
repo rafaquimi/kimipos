@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detector de Impresoras</title>
+</head>
+<body>
+    <h1>Detector de Impresoras del Sistema</h1>
+    <div id="printers-list"></div>
+    <button onclick="detectPrinters()">Detectar Impresoras</button>
+
+    <script>
+        function detectPrinters() {
+            const printersList = document.getElementById('printers-list');
+            printersList.innerHTML = '<p>Detectando impresoras...</p>';
+
+            try {
+                // Método 1: Usar ActiveX para WMI (solo funciona en IE/Edge legacy)
+                if (window.ActiveXObject) {
+                    try {
+                        const wmi = new ActiveXObject('WbemScripting.SWbemLocator');
+                        const service = wmi.ConnectServer('.', 'root\\cimv2');
+                        const query = service.ExecQuery('SELECT Name, PortName, DriverName, PrinterStatus FROM Win32_Printer');
+                        
+                        let printers = [];
+                        for (let printer of query) {
+                            printers.push({
+                                name: printer.Name,
+                                port: printer.PortName,
+                                driver: printer.DriverName,
+                                status: printer.PrinterStatus
+                            });
+                        }
+
+                        displayPrinters(printers);
+                        return;
+                    } catch (e) {
+                        console.log('WMI no disponible:', e);
+                    }
+                }
+
+                // Método 2: Usar la API de impresión del navegador
+                if ('print' in window) {
+                    // Crear un elemento temporal para forzar la detección
+                    const tempFrame = document.createElement('iframe');
+                    tempFrame.style.display = 'none';
+                    tempFrame.src = 'data:text/html,<html><body>Test</body></html>';
+                    document.body.appendChild(tempFrame);
+                    
+                    tempFrame.onload = function() {
+                        try {
+                            // Intentar acceder a las impresoras del sistema
+                            tempFrame.contentWindow.print = function() {
+                                // Esto puede mostrar el diálogo de impresión del sistema
+                                displayPrinters([{ name: 'Impresora del sistema detectada', port: 'N/A', driver: 'N/A', status: 'N/A' }]);
+                            };
+                            tempFrame.contentWindow.print();
+                        } catch (e) {
+                            console.log('No se pudo acceder a la función de impresión:', e);
+                            displayPrinters([]);
+                        } finally {
+                            document.body.removeChild(tempFrame);
+                        }
+                    };
+                    return;
+                }
+
+                // Método 3: Fallback
+                displayPrinters([]);
+
+            } catch (error) {
+                console.error('Error detectando impresoras:', error);
+                displayPrinters([]);
+            }
+        }
+
+        function displayPrinters(printers) {
+            const printersList = document.getElementById('printers-list');
+            
+            if (printers.length === 0) {
+                printersList.innerHTML = '<p>No se pudieron detectar impresoras del sistema.</p>';
+                return;
+            }
+
+            let html = '<h2>Impresoras Detectadas:</h2><ul>';
+            printers.forEach(printer => {
+                html += `<li><strong>${printer.name}</strong> (Puerto: ${printer.port}, Driver: ${printer.driver}, Estado: ${printer.status})</li>`;
+            });
+            html += '</ul>';
+
+            printersList.innerHTML = html;
+
+            // Enviar datos al padre si está en un iframe
+            if (window.parent !== window) {
+                window.parent.postMessage({
+                    type: 'PRINTERS_DETECTED',
+                    printers: printers.map(p => p.name)
+                }, '*');
+            }
+        }
+
+        // Detectar automáticamente al cargar
+        window.onload = function() {
+            detectPrinters();
+        };
+    </script>
+</body>
+</html>
+

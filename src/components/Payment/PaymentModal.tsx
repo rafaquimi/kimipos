@@ -3,6 +3,7 @@ import { X, Receipt, CreditCard, DollarSign, Printer, User } from 'lucide-react'
 import toast from 'react-hot-toast';
 import { useConfig } from '../../contexts/ConfigContext';
 import { useCustomers } from '../../contexts/CustomerContext';
+import { useBalanceIncentives } from '../../contexts/BalanceIncentiveContext';
 
 import { db } from '../../database/db';
 import { formatPrice } from '../../utils/taxUtils';

@@ -8,15 +8,19 @@ yarn-error.log*
 dist/
 dist-electron/
 build/
-out/
 
-# Electron build files
-*.exe
-*.dmg
-*.deb
-*.rpm
-*.AppImage
-*.snap
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
 
 # OS generated files
 .DS_Store
@@ -26,12 +30,6 @@ out/
 .Trashes
 ehthumbs.db
 Thumbs.db
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
 
 # Logs
 logs
@@ -46,52 +44,20 @@ pids
 # Coverage directory used by tools like istanbul
 coverage/
 
-# nyc test coverage
-.nyc_output
+# Temporary files
+temp/
+*.tmp
+*.temp
 
-# Dependency directories
-jspm_packages/
+# Electron build files
+*.exe
+*.dmg
+*.deb
+*.rpm
+*.AppImage
+*.blockmap
+*.yml
 
-# Optional npm cache directory
-.npm
-
-# Optional REPL history
-.node_repl_history
-
-# Output of 'npm pack'
+# Package files
 *.tgz
-
-# Yarn Integrity file
-.yarn-integrity
-
-# dotenv environment variables file
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# parcel-bundler cache (https://parceljs.org/)
-.cache
-.parcel-cache
-
-# next.js build output
-.next
-
-# nuxt.js build output
-.nuxt
-
-# vuepress build output
-.vuepress/dist
-
-# Serverless directories
-.serverless
-
-# FuseBox cache
-.fusebox/
-
-# DynamoDB Local files
-.dynamodb/
-
-# TernJS port file
-.tern-port
+*.tar.gz

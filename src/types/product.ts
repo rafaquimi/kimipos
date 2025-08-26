@@ -26,6 +26,8 @@ export interface Product {
   combinations?: ProductCombination[]; // Combinaciones disponibles (opcional para compatibilidad)
   isActive: boolean;
   askForPrice?: boolean; // Si es true, pedir precio al usuario en el dashboard
+  // Configuración de impresión
+  printerName?: string; // Nombre de la impresora específica para este producto
   createdAt: Date;
   updatedAt: Date;
 }
@@ -36,6 +38,8 @@ export interface Category {
   description?: string;
   color: string;
   isActive: boolean;
+  // Configuración de impresión por categoría
+  printerName?: string; // Nombre de la impresora específica para esta categoría
   createdAt: Date;
   updatedAt: Date;
 }

@@ -31,6 +31,18 @@ interface RestaurantConfig {
   };
   // Configuración de interfaz
   enableOnScreenKeyboard?: boolean;
+  // Configuración de impresión
+  printing?: {
+    mainPrinter: string;
+    mainPrinterAutoPrint: boolean;
+    mainPrinterShowPreview: boolean;
+    orderPrinter: string;
+    orderPrinterAutoPrint: boolean;
+    orderPrinterShowPreview: boolean;
+    paperFormat: string;
+    orientation: string;
+    fontSize: string;
+  };
 }
 
 interface ConfigContextType {
@@ -87,7 +99,18 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           city: '',
         },
         modifiers: parsed.modifiers ?? { global: [], byCategory: {} },
-        enableOnScreenKeyboard: parsed.enableOnScreenKeyboard ?? true
+        enableOnScreenKeyboard: parsed.enableOnScreenKeyboard ?? true,
+        printing: parsed.printing ?? {
+          mainPrinter: '',
+          mainPrinterAutoPrint: false,
+          mainPrinterShowPreview: true,
+          orderPrinter: '',
+          orderPrinterAutoPrint: true,
+          orderPrinterShowPreview: false,
+          paperFormat: '80mm',
+          orientation: 'portrait',
+          fontSize: 'normal'
+        }
       } as RestaurantConfig;
     }
     
@@ -116,7 +139,18 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         city: '',
       },
       modifiers: { global: [], byCategory: {} },
-      enableOnScreenKeyboard: true
+      enableOnScreenKeyboard: true,
+      printing: {
+        mainPrinter: '',
+        mainPrinterAutoPrint: false,
+        mainPrinterShowPreview: true,
+        orderPrinter: '',
+        orderPrinterAutoPrint: true,
+        orderPrinterShowPreview: false,
+        paperFormat: '80mm',
+        orientation: 'portrait',
+        fontSize: 'normal'
+      }
     };
   });
 

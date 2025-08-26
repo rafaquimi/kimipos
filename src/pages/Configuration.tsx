@@ -13,6 +13,7 @@ import CustomerModal from '../components/CustomerModal';
 import ConfirmationModal from '../components/ConfirmationModal';
 import BalanceIncentiveModal from '../components/BalanceIncentiveModal';
 import ClosedTicketsManager from '../components/ClosedTicketsManager';
+import { useSystemPrinters } from '../hooks/useSystemPrinters';
 import toast from 'react-hot-toast';
 
 const ConfigurationPage: React.FC = () => {
@@ -52,6 +53,8 @@ const ConfigurationPage: React.FC = () => {
       setActiveSection('incentives');
     } else if (location.pathname.includes('/configuration/tickets')) {
       setActiveSection('tickets');
+    } else if (location.pathname.includes('/configuration/printing')) {
+      setActiveSection('printing');
     } else {
       setActiveSection('general');
     }
@@ -73,7 +76,7 @@ const ConfigurationPage: React.FC = () => {
     updateDecorPosition,
     updateDecorRotation
   } = useTables();
-  const { categories } = useProducts();
+  const { categories, configureDefaultPrinters } = useProducts();
   
   const { 
     config, 
@@ -87,6 +90,8 @@ const ConfigurationPage: React.FC = () => {
     getTaxById,
     getDefaultTax
   } = useConfig();
+  
+  const { printers: systemPrinters, isLoading: isLoadingPrinters, error: printerError, refreshPrinters } = useSystemPrinters();
   const [configValues, setConfigValues] = useState(config);
 
   useEffect(() => {
@@ -902,6 +907,378 @@ const ConfigurationPage: React.FC = () => {
     );
   };
 
+  const renderPrinting = () => {
+    return (
+      <div className="space-y-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="mb-6">
+            <h2 className="text-xl font-semibold text-gray-900">Configuración de Impresión</h2>
+            <p className="text-gray-600 mt-1">Configura las impresoras para tickets y comandas</p>
+          </div>
+          
+          {/* Impresora Principal */}
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Impresora Principal</h3>
+                <p className="text-sm text-gray-600 mt-1">Esta impresora se usará para imprimir tickets de cobro y recibos</p>
+              </div>
+              <div className="flex space-x-2">
+                <button
+                  onClick={refreshPrinters}
+                  disabled={isLoadingPrinters}
+                  className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
+                  title="Refrescar lista de impresoras"
+                >
+                  <span className="text-xs">🔄</span>
+                  <span>Refrescar</span>
+                </button>
+                <button
+                  onClick={() => {
+                    console.log('=== DETECCIÓN DE IMPRESORAS ===');
+                    console.log('Impresoras disponibles:', systemPrinters);
+                    console.log('Estado de carga:', isLoadingPrinters);
+                    console.log('Error:', printerError);
+                    toast.success('Información de impresoras mostrada en consola');
+                  }}
+                  className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors flex items-center space-x-1"
+                  title="Ver información detallada"
+                >
+                  <span className="text-xs">ℹ️</span>
+                  <span>Info</span>
+                </button>
+              </div>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Seleccionar Impresora
+                </label>
+                <select
+                  value={configValues.printing?.mainPrinter || ''}
+                  onChange={(e) => setConfigValues({
+                    ...configValues,
+                    printing: {
+                      ...configValues.printing,
+                      mainPrinter: e.target.value
+                    }
+                  })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  disabled={isLoadingPrinters}
+                >
+                  <option value="">
+                    {isLoadingPrinters ? 'Detectando impresoras...' : 'Seleccionar impresora...'}
+                  </option>
+                  {systemPrinters.map((printer, index) => (
+                    <option key={index} value={printer}>
+                      {printer}
+                    </option>
+                  ))}
+                  <option value="thermal">Impresora térmica (genérica)</option>
+                  <option value="pdf">Guardar como PDF</option>
+                </select>
+                {systemPrinters.length > 0 && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    <div className="flex items-center space-x-2">
+                      <span className="flex items-center">
+                        🖨️ {systemPrinters.length} impresora{systemPrinters.length !== 1 ? 's' : ''} disponible{systemPrinters.length !== 1 ? 's' : ''}
+                      </span>
+                      <span className="text-green-500">●</span>
+                      <span className="text-xs text-green-600">Servidor activo</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        console.log('=== IMPRESORAS DEL SISTEMA ===');
+                        console.log('Total detectadas:', systemPrinters.length);
+                        systemPrinters.forEach((printer, index) => {
+                          console.log(`${index + 1}. ${printer}`);
+                        });
+                        toast.success(`Lista de ${systemPrinters.length} impresoras mostrada en consola`);
+                      }}
+                      className="text-blue-500 hover:text-blue-700 underline mt-1"
+                    >
+                      📋 Ver lista completa en consola
+                    </button>
+                  </div>
+                )}
+                {printerError && (
+                  <p className="text-xs text-red-500 mt-1">
+                    ⚠️ {printerError}
+                  </p>
+                )}
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Configuración Adicional
+                </label>
+                <div className="space-y-2">
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={configValues.printing?.mainPrinterAutoPrint || false}
+                      onChange={(e) => setConfigValues({
+                        ...configValues,
+                        printing: {
+                          ...configValues.printing,
+                          mainPrinterAutoPrint: e.target.checked
+                        }
+                      })}
+                      className="mr-2 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    />
+                    <span className="text-sm text-gray-700">Imprimir automáticamente al completar cobro</span>
+                  </label>
+                  
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={configValues.printing?.mainPrinterShowPreview || true}
+                      onChange={(e) => setConfigValues({
+                        ...configValues,
+                        printing: {
+                          ...configValues.printing,
+                          mainPrinterShowPreview: e.target.checked
+                        }
+                      })}
+                      className="mr-2 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    />
+                    <span className="text-sm text-gray-700">Mostrar vista previa antes de imprimir</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Impresora de Comandas */}
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Impresora de Comandas</h3>
+            <p className="text-sm text-gray-600 mb-4">Esta impresora se usará para imprimir comandas de cocina y bar</p>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Seleccionar Impresora
+                </label>
+                <select
+                  value={configValues.printing?.orderPrinter || ''}
+                  onChange={(e) => setConfigValues({
+                    ...configValues,
+                    printing: {
+                      ...configValues.printing,
+                      orderPrinter: e.target.value
+                    }
+                  })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  disabled={isLoadingPrinters}
+                >
+                  <option value="">
+                    {isLoadingPrinters ? 'Detectando impresoras...' : 'Seleccionar impresora...'}
+                  </option>
+                  {systemPrinters.map((printer, index) => (
+                    <option key={index} value={printer}>
+                      {printer}
+                    </option>
+                  ))}
+                  <option value="thermal">Impresora térmica (genérica)</option>
+                  <option value="kitchen">Impresora de cocina (genérica)</option>
+                  <option value="bar">Impresora de bar (genérica)</option>
+                  <option value="pdf">Guardar como PDF</option>
+                </select>
+                {systemPrinters.length > 0 && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    <div className="flex items-center space-x-2">
+                      <span className="flex items-center">
+                        🖨️ {systemPrinters.length} impresora{systemPrinters.length !== 1 ? 's' : ''} disponible{systemPrinters.length !== 1 ? 's' : ''}
+                      </span>
+                      <span className="text-green-500">●</span>
+                      <span className="text-xs text-green-600">Servidor activo</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        console.log('=== IMPRESORAS DEL SISTEMA ===');
+                        console.log('Total detectadas:', systemPrinters.length);
+                        systemPrinters.forEach((printer, index) => {
+                          console.log(`${index + 1}. ${printer}`);
+                        });
+                        toast.success(`Lista de ${systemPrinters.length} impresoras mostrada en consola`);
+                      }}
+                      className="text-blue-500 hover:text-blue-700 underline mt-1"
+                    >
+                      📋 Ver lista completa en consola
+                    </button>
+                  </div>
+                )}
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Configuración Adicional
+                </label>
+                <div className="space-y-2">
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={configValues.printing?.orderPrinterAutoPrint || true}
+                      onChange={(e) => setConfigValues({
+                        ...configValues,
+                        printing: {
+                          ...configValues.printing,
+                          orderPrinterAutoPrint: e.target.checked
+                        }
+                      })}
+                      className="mr-2 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    />
+                    <span className="text-sm text-gray-700">Imprimir automáticamente al crear pedido</span>
+                  </label>
+                  
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={configValues.printing?.orderPrinterShowPreview || false}
+                      onChange={(e) => setConfigValues({
+                        ...configValues,
+                        printing: {
+                          ...configValues.printing,
+                          orderPrinterShowPreview: e.target.checked
+                        }
+                      })}
+                      className="mr-2 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    />
+                    <span className="text-sm text-gray-700">Mostrar vista previa antes de imprimir</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Configuración General de Impresión */}
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Configuración General</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Formato de Papel
+                </label>
+                <select
+                  value={configValues.printing?.paperFormat || '80mm'}
+                  onChange={(e) => setConfigValues({
+                    ...configValues,
+                    printing: {
+                      ...configValues.printing,
+                      paperFormat: e.target.value
+                    }
+                  })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                >
+                  <option value="80mm">80mm (Térmica estándar)</option>
+                  <option value="58mm">58mm (Térmica pequeña)</option>
+                  <option value="A4">A4 (Papel normal)</option>
+                  <option value="letter">Letter (Papel carta)</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Orientación
+                </label>
+                <select
+                  value={configValues.printing?.orientation || 'portrait'}
+                  onChange={(e) => setConfigValues({
+                    ...configValues,
+                    printing: {
+                      ...configValues.printing,
+                      orientation: e.target.value
+                    }
+                  })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                >
+                  <option value="portrait">Vertical</option>
+                  <option value="landscape">Horizontal</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Tamaño de Fuente
+                </label>
+                <select
+                  value={configValues.printing?.fontSize || 'normal'}
+                  onChange={(e) => setConfigValues({
+                    ...configValues,
+                    printing: {
+                      ...configValues.printing,
+                      fontSize: e.target.value
+                    }
+                  })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                >
+                  <option value="small">Pequeña</option>
+                  <option value="normal">Normal</option>
+                  <option value="large">Grande</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          
+          {/* Configuración Automática de Impresoras */}
+          <div className="mb-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <h3 className="text-lg font-semibold text-blue-900 mb-4">⚡ Configuración Automática</h3>
+            <p className="text-sm text-blue-700 mb-4">
+              Configura automáticamente todas las impresoras para que funcionen correctamente con el sistema de comandas.
+            </p>
+            
+            <div className="space-y-4">
+              <div className="flex items-center space-x-4">
+                <button
+                  onClick={() => {
+                    configureDefaultPrinters('PDF24');
+                    toast.success('Impresora PDF24 configurada para todos los productos y categorías');
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                >
+                  <span>🖨️</span>
+                  <span>Configurar PDF24 para Todo</span>
+                </button>
+                
+                <button
+                  onClick={() => {
+                    configureDefaultPrinters('Microsoft Print to PDF');
+                    toast.success('Impresora Microsoft Print to PDF configurada para todos los productos y categorías');
+                  }}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
+                >
+                  <span>🖨️</span>
+                  <span>Configurar Microsoft PDF</span>
+                </button>
+              </div>
+              
+              <div className="text-xs text-blue-600">
+                💡 <strong>Recomendado:</strong> Usa PDF24 para pruebas. Esto configurará automáticamente todos los productos y categorías 
+                para que se impriman correctamente cuando proceses un pedido.
+              </div>
+            </div>
+          </div>
+          
+          {/* Botón de Guardar */}
+          <div className="flex justify-end">
+            <button
+              onClick={() => {
+                updateConfig({ printing: configValues.printing });
+                toast.success('Configuración de impresión guardada');
+              }}
+              className="btn btn-primary flex items-center space-x-2"
+            >
+              <Save className="w-4 h-4" />
+              <span>Guardar Configuración de Impresión</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderSalons = () => {
     const activeSalon = salons.find(s => s.id === activeSalonId);
 
@@ -1064,6 +1441,9 @@ const ConfigurationPage: React.FC = () => {
         )}
         {activeSection === 'salons' && (
           <div className="h-full">{renderSalons()}</div>
+        )}
+        {activeSection === 'printing' && (
+          <div className="h-full overflow-y-auto p-6">{renderPrinting()}</div>
         )}
       </div>
 

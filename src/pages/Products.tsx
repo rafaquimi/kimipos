@@ -10,7 +10,8 @@ import {
   Eye,
   EyeOff,
   Save,
-  X
+  X,
+  Printer
 } from 'lucide-react';
 import { useProducts } from '../contexts/ProductContext';
 import { Product } from '../types/product';
@@ -19,11 +20,14 @@ import ColorPicker from '../components/ColorPicker';
 import ProductTariffManager from '../components/ProductTariffManager';
 import ProductCombinationManager from '../components/ProductCombinationManager';
 import { ProductTariff, ProductCombination } from '../types/product';
+import { CategoryPrintingConfig } from '../components/CategoryPrintingConfig';
+import { useSystemPrinters } from '../hooks/useSystemPrinters';
 import toast from 'react-hot-toast';
 
 const Products: React.FC = () => {
   const { products, categories, addProduct, updateProduct, deleteProduct } = useProducts();
   const { getCurrencySymbol, config } = useConfig();
+  const { printers, isLoading: printersLoading, error: printersError } = useSystemPrinters();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
@@ -39,11 +43,13 @@ const Products: React.FC = () => {
     backgroundColor: '#3b82f6', // Color por defecto
     isActive: true,
     taxId: '', // ID del impuesto seleccionado
-    askForPrice: false
+    askForPrice: false,
+    printerName: '' // Configuración de impresora específica
   });
   const [productTariffs, setProductTariffs] = useState<ProductTariff[]>([]);
   const [productCombinations, setProductCombinations] = useState<ProductCombination[]>([]);
   const [activeTab, setActiveTab] = useState<'basic' | 'advanced'>('basic');
+  const [showCategoryPrintingConfig, setShowCategoryPrintingConfig] = useState(false);
 
   // Filtrar productos
   const filteredProducts = products.filter(product => {
@@ -65,7 +71,8 @@ const Products: React.FC = () => {
         backgroundColor: product.backgroundColor || '#3b82f6',
         isActive: product.isActive,
         taxId: product.taxId || config.defaultTaxId || '',
-        askForPrice: product.askForPrice || false
+        askForPrice: product.askForPrice || false,
+        printerName: product.printerName || ''
       });
       setProductTariffs(product.tariffs || []);
       setProductCombinations(product.combinations || []);
@@ -79,7 +86,8 @@ const Products: React.FC = () => {
         backgroundColor: '#3b82f6',
         isActive: true,
         taxId: config.defaultTaxId || '',
-        askForPrice: false
+        askForPrice: false,
+        printerName: ''
       });
       setProductTariffs([]);
       setProductCombinations([]);
@@ -99,7 +107,8 @@ const Products: React.FC = () => {
       backgroundColor: '#3b82f6',
       isActive: true,
       taxId: '',
-      askForPrice: false
+      askForPrice: false,
+      printerName: ''
     });
     setProductTariffs([]);
     setProductCombinations([]);
@@ -128,7 +137,8 @@ const Products: React.FC = () => {
       tariffs: productTariffs,
       combinations: productCombinations,
       isActive: formData.isActive,
-      askForPrice: formData.askForPrice
+      askForPrice: formData.askForPrice,
+      printerName: formData.printerName || undefined
     };
 
     if (editingProduct) {
@@ -165,13 +175,22 @@ const Products: React.FC = () => {
             <h1 className="text-2xl font-bold text-gray-900">Gestión de Productos</h1>
             <p className="text-gray-600">Administra tu catálogo de productos</p>
           </div>
-          <button
-            onClick={() => openModal()}
-            className="btn btn-primary flex items-center space-x-2 px-6 py-4 min-h-[48px] text-base font-medium"
-          >
-            <Plus className="w-5 h-5" />
-            <span>Nuevo Producto</span>
-          </button>
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={() => setShowCategoryPrintingConfig(true)}
+              className="btn btn-secondary flex items-center space-x-2 px-4 py-3 min-h-[44px] text-sm font-medium"
+            >
+              <Printer className="w-4 h-4" />
+              <span>Config. Impresión</span>
+            </button>
+            <button
+              onClick={() => openModal()}
+              className="btn btn-primary flex items-center space-x-2 px-6 py-4 min-h-[48px] text-base font-medium"
+            >
+              <Plus className="w-5 h-5" />
+              <span>Nuevo Producto</span>
+            </button>
+          </div>
         </div>
 
         {/* Filtros */}
@@ -238,6 +257,9 @@ const Products: React.FC = () => {
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Estado
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Impresión
                   </th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Acciones
@@ -322,6 +344,15 @@ const Products: React.FC = () => {
                             : 'bg-red-100 text-red-800'
                         }`}>
                           {product.isActive ? 'Activo' : 'Inactivo'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          product.printerName
+                            ? 'bg-blue-100 text-blue-800' 
+                            : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {product.printerName || 'Sin configurar'}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -607,6 +638,40 @@ const Products: React.FC = () => {
                         Cuando esté activo, al seleccionar este producto en el dashboard aparecerá un popup solicitando el precio del producto.
                       </p>
                     </div>
+
+                    {/* Configuración de Impresión */}
+                    <div className="bg-white rounded-lg p-4 border border-green-200">
+                      <h5 className="text-sm font-medium text-gray-700 mb-3">Configuración de Impresión</h5>
+                      <div className="space-y-3">
+                        <div>
+                          <label htmlFor="printerSelect" className="block text-sm font-medium text-gray-700 mb-2">
+                            Impresora para este producto
+                          </label>
+                          <select
+                            id="printerSelect"
+                            value={formData.printerName}
+                            onChange={(e) => setFormData({ ...formData, printerName: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500"
+                          >
+                            <option value="">Sin impresora configurada</option>
+                            {printersLoading ? (
+                              <option value="" disabled>Cargando impresoras...</option>
+                            ) : printersError ? (
+                              <option value="" disabled>Error cargando impresoras</option>
+                            ) : (
+                              printers.map((printerName) => (
+                                <option key={printerName} value={printerName}>
+                                  {printerName}
+                                </option>
+                              ))
+                            )}
+                          </select>
+                        </div>
+                        <p className="text-xs text-gray-600">
+                          Selecciona la impresora específica para este producto. Si no seleccionas ninguna, se usará la configuración de la categoría.
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -614,6 +679,12 @@ const Products: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal de configuración de impresión por categoría */}
+      <CategoryPrintingConfig
+        isOpen={showCategoryPrintingConfig}
+        onClose={() => setShowCategoryPrintingConfig(false)}
+      />
     </div>
   );
 };

@@ -256,7 +256,7 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
     try {
       let accountName: string;
       let customerData: any = null;
-
+      
       if (selectedCustomer) {
         // Usar cliente existente
         accountName = `${selectedCustomer.name} ${selectedCustomer.lastName}`;
@@ -305,7 +305,7 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
     setSelectedCustomer(null);
   };
 
-
+  
 
   // Función para cambiar estado de mesa (solo para debugging)
   const handleChangeTableStatus = (table: TableData, newStatus: 'available' | 'occupied' | 'reserved') => {
@@ -413,7 +413,7 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
               <div className="flex items-center space-x-3">
                 <MapPin className="w-6 h-6 text-primary-600" />
                 <div>
-                  <h2 className="text-xl font-semibold text-gray-900">Seleccionar Mesa</h2>
+                <h2 className="text-xl font-semibold text-gray-900">Seleccionar Mesa</h2>
                   {isMergeSelectionMode && (
                     <p className="text-sm text-blue-600 font-medium mt-1">
                       {mergeWizardStep === 1 ? '🔗 Selecciona la mesa principal para unir' : '🔗 Selecciona mesas adicionales para unir'}
@@ -443,19 +443,19 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
                 )}
                 
                 {/* Botón Ticket sin Mesa */}
-                {onTicketWithoutTable && (
-                  <button
-                    onClick={onTicketWithoutTable}
-                    className="px-6 py-3 bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-700 hover:to-violet-700 text-white font-bold rounded-xl shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105 flex items-center space-x-2 text-base border-2 border-purple-400 ring-2 ring-purple-200"
-                  >
-                    <DollarSign className="w-5 h-5" />
-                    <span>Ticket sin Mesa</span>
-                  </button>
-                )}
-                
+              {onTicketWithoutTable && (
+                <button
+                  onClick={onTicketWithoutTable}
+                  className="px-6 py-3 bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-700 hover:to-violet-700 text-white font-bold rounded-xl shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105 flex items-center space-x-2 text-base border-2 border-purple-400 ring-2 ring-purple-200"
+                >
+                  <DollarSign className="w-5 h-5" />
+                  <span>Ticket sin Mesa</span>
+                </button>
+              )}
+              
                 {/* Botón Unir Mesas */}
                 {activeSalonId && (
-                  <button
+                <button
                     onClick={() => setShowMergeWizard(true)}
                     className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold rounded-xl shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105 flex items-center space-x-2 text-base border-2 border-green-400 ring-2 ring-green-200"
                   >
@@ -512,35 +512,35 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
                     {salon.name}
                   </button>
                 ))}
-              </div>
+            </div>
 
               {/* Búsqueda y filtros (derecha) */}
               <div className="flex items-center space-x-4">
-                {/* Búsqueda */}
+              {/* Búsqueda */}
                 <div className="relative w-64">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    type="text"
+                <input
+                  type="text"
                     placeholder="Buscar mesa..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                     data-osk={isKeyboardEnabled ? undefined : "false"}
-                  />
-                </div>
-                {/* Estado */}
-                <div className="flex items-center space-x-2">
-                  <Filter className="w-5 h-5 text-gray-400" />
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  >
-                    <option value="all">Todas</option>
-                    <option value="available">Disponibles</option>
-                    <option value="occupied">Ocupadas</option>
-                    <option value="reserved">Reservadas</option>
-                  </select>
+                />
+              </div>
+              {/* Estado */}
+              <div className="flex items-center space-x-2">
+                <Filter className="w-5 h-5 text-gray-400" />
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                >
+                  <option value="all">Todas</option>
+                  <option value="available">Disponibles</option>
+                  <option value="occupied">Ocupadas</option>
+                  <option value="reserved">Reservadas</option>
+                </select>
                 </div>
               </div>
             </div>
@@ -675,11 +675,11 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
           </div>
 
           <div className="px-4 py-3 bg-gray-50 border-t border-gray-200">
-            <div className="text-sm text-gray-600">
-              <p>Haz clic en una mesa disponible u ocupada para seleccionarla</p>
-              <p className="text-xs text-gray-500 mt-1">
-                💡 <strong>Pulsación sostenida (1s)</strong> o <strong>clic derecho</strong> para asignar nombre temporal
-              </p>
+              <div className="text-sm text-gray-600">
+                <p>Haz clic en una mesa disponible u ocupada para seleccionarla</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  💡 <strong>Pulsación sostenida (1s)</strong> o <strong>clic derecho</strong> para asignar nombre temporal
+                </p>
             </div>
           </div>
         </div>
@@ -780,8 +780,8 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
                   <span className="text-blue-600 text-xs">
                     Selecciona existente o crea nuevo
                   </span>
-                </div>
-              </div>
+                        </div>
+                        </div>
               
               {/* Búsqueda directa de cliente */}
               <div className="mb-4">
@@ -800,15 +800,15 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
                       autoFocus={true}
                       data-osk={isKeyboardEnabled ? undefined : "false"}
                     />
-                  </div>
-                  <button
+                      </div>
+                      <button
                     onClick={() => setShowCustomerSelector(true)}
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center space-x-1"
                   >
                     <User className="w-4 h-4" />
                     <span>Mostrar Clientes</span>
-                  </button>
-                </div>
+                      </button>
+                    </div>
                 
                 {/* Resultado de búsqueda */}
                 {customerSearchTerm && (
@@ -871,7 +871,7 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
                           </div>
                         </div>
                       </div>
-                      <button
+                    <button
                         onClick={() => {
                           setSelectedCustomer(null);
                           setCustomerSearchTerm('');
@@ -880,19 +880,19 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
                         title="Cambiar cliente"
                       >
                         <X className="w-4 h-4" />
-                      </button>
+                    </button>
                     </div>
                   </div>
                 )}
               </div>
-              
-              {/* Separador */}
+
+                {/* Separador */}
               <div className="flex items-center mb-4">
-                <div className="flex-1 border-t border-gray-300"></div>
+                    <div className="flex-1 border-t border-gray-300"></div>
                 <span className="px-3 text-sm text-gray-500 font-medium">O</span>
-                <div className="flex-1 border-t border-gray-300"></div>
-              </div>
-              
+                    <div className="flex-1 border-t border-gray-300"></div>
+                  </div>
+
                               {/* Campo de nombre temporal */}
                 <div className="mb-4">
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -908,23 +908,23 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
                     data-osk={isKeyboardEnabled ? undefined : "false"}
                   />
                 </div>
-              
+
               {/* Botones */}
               <div className="flex space-x-3 pt-2">
-                <button
-                  onClick={handleCancelCustomerNameModal}
+                  <button
+                    onClick={handleCancelCustomerNameModal}
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-medium"
-                >
-                  Cancelar
-                </button>
-                <button
+                  >
+                    Cancelar
+                  </button>
+                  <button
                   onClick={handleCreateNamedAccount}
                   disabled={!selectedCustomer && !customerName.trim()}
                   className="flex-1 px-4 py-2 bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 text-white rounded-lg font-semibold transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
+                  >
                   {selectedCustomer ? `Crear Cuenta para ${selectedCustomer.name}` : 'Crear Cuenta'}
-                </button>
-              </div>
+                  </button>
+                </div>
             </div>
           </div>
         </div>
@@ -967,15 +967,15 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
                 </div>
                 
                 <div style={{ height: '500px', overflow: 'hidden' }}>
-                  <CustomerSelector
-                    selectedCustomer={selectedCustomer}
-                    onCustomerSelect={(customer) => {
-                      setSelectedCustomer(customer);
-                      setShowCustomerSelector(false);
-                    }}
-                    placeholder="Buscar cliente por nombre, email, teléfono o código de tarjeta..."
+                <CustomerSelector
+                  selectedCustomer={selectedCustomer}
+                  onCustomerSelect={(customer) => {
+                    setSelectedCustomer(customer);
+                    setShowCustomerSelector(false);
+                  }}
+                  placeholder="Buscar cliente por nombre, email, teléfono o código de tarjeta..."
                     inModal={true}
-                  />
+                />
                 </div>
                 
                 {customers.length === 0 && (
@@ -1046,15 +1046,15 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
                 <h3 className="text-xl font-bold text-gray-900">
                   Búsqueda de Cliente
                 </h3>
-                <button
-                  onClick={() => {
+                    <button
+                      onClick={() => {
                     setShowBalanceSearchModal(false);
                     setBalanceSearchTerm('');
-                  }}
+                      }}
                   className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                >
+                    >
                   <X className="w-5 h-5" />
-                </button>
+                    </button>
               </div>
 
               {/* Campo de búsqueda */}
@@ -1172,15 +1172,15 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
                       {filteredBalanceCustomers.length > 5 && (
                         <div className="text-xs text-gray-500 text-center pt-2 border-t border-indigo-100">
                           ... y {filteredBalanceCustomers.length - 5} más. Refina tu búsqueda.
-                        </div>
-                      )}
-                    </div>
+                  </div>
+                )}
+              </div>
                   ) : (
                     <div className="p-6 bg-yellow-50 border border-yellow-200 rounded-lg">
                       <div className="text-center">
                         <div className="text-lg font-semibold text-yellow-800 mb-2">
                           Cliente no encontrado
-                        </div>
+            </div>
                         <div className="text-sm text-yellow-700 mb-4">
                           No se encontró ningún cliente con "{balanceSearchTerm}"
                         </div>
@@ -1205,9 +1205,9 @@ const TableSelectorModal: React.FC<TableSelectorModalProps> = ({
                             Cancelar
                           </button>
                         </div>
-                      </div>
-                    </div>
-                  )}
+          </div>
+        </div>
+      )}
                 </div>
               )}
 

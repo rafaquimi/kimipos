@@ -41,6 +41,7 @@ import { calculateTotalBase, calculateTotalVAT, calculateTotalWithVAT, formatPri
 import { ProductTariff } from '../types/product';
 import { db } from '../database/db';
 import { generatePOSTicketPDF } from '../utils/pdfGenerator';
+import { processOrderPrinting } from '../utils/printingService';
 import { useNavigate } from 'react-router-dom';
 
 interface OrderItem {
@@ -117,7 +118,7 @@ const Dashboard: React.FC = () => {
   
   const { addOrderToTable, getTableOrderItems, clearTableOrder, tables, removeNamedAccount, addNamedAccount, updateTableStatus, salons, addPartialPayment, getPartialPayments, getTotalPartialPayments, clearPartialPayments, updateTableTotalAfterPartialPayment } = useTables();
   const { getCurrencySymbol, getTaxRate, getModifiersForCategory, config } = useConfig();
-  const { products, categories } = useProducts();
+  const { products, categories, getProductPrinter } = useProducts();
   const { customers, updateCustomer, getCustomerByCardCode } = useCustomers();
   const { incentives } = useBalanceIncentives();
 
@@ -1030,14 +1031,44 @@ const Dashboard: React.FC = () => {
     // Usar replaceExisting: true para reemplazar completamente los productos existentes
     addOrderToTable(selectedTable.id, total, currentOrder, selectedCustomer, true);
     
-    // Mostrar mensaje de éxito
-    if (selectedTable.id.startsWith('account-')) {
-      toast.success(`Pedido procesado exitosamente para ${selectedTable.name}`);
-    } else {
-      toast.success(`Pedido procesado exitosamente para Mesa ${selectedTable.number}`);
+    // Procesar impresión según configuración de productos
+    const tableNumber = selectedTable.id.startsWith('account-') 
+      ? selectedTable.name 
+      : `Mesa ${selectedTable.number}`;
+    const customerName = selectedCustomer?.name;
+    
+    // Mostrar toast de procesando impresión
+    const processingToast = toast.loading('Procesando impresión...', { duration: Infinity });
+    
+    try {
+      // Esperar a que termine completamente la impresión
+      await processOrderPrinting(
+        currentOrder,
+        tableNumber,
+        customerName,
+        getProductPrinter,
+        config
+      );
+      
+      // Cerrar el toast de procesando
+      toast.dismiss(processingToast);
+      
+      // Mostrar mensaje de éxito después de que termine la impresión
+      if (selectedTable.id.startsWith('account-')) {
+        toast.success(`Pedido procesado exitosamente para ${selectedTable.name}`);
+      } else {
+        toast.success(`Pedido procesado exitosamente para Mesa ${selectedTable.number}`);
+      }
+      
+    } catch (error) {
+      console.error('Error procesando impresión:', error);
+      // Cerrar el toast de procesando
+      toast.dismiss(processingToast);
+      // Mostrar error al usuario
+      toast.error('Error al procesar la impresión');
     }
     
-    // Limpiar todo y volver a la pantalla de mesas
+    // Limpiar todo y volver a la pantalla de mesas DESPUÉS de que termine la impresión
     setCurrentOrder([]);
     setSelectedCustomer(null);
     setSelectedTable(null);

@@ -13,7 +13,8 @@ import {
   Receipt,
   SlidersHorizontal,
   Gift,
-  Archive
+  Archive,
+  Printer
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -96,6 +97,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       href: '/configuration',
       icon: Settings,
       description: 'Configuración del sistema'
+    },
+    {
+      name: 'Impresión',
+      href: '/configuration/printing',
+      icon: Printer,
+      description: 'Configuración de impresoras'
     }
   ];
 
