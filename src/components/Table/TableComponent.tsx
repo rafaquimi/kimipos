@@ -36,6 +36,8 @@ export interface TableData {
 interface TableComponentProps {
   table: TableData;
   isSelected?: boolean;
+  isSelectedForMerge?: boolean; // Nueva prop para indicar si está seleccionada para unir
+  isMergeSelectionMode?: boolean; // Nueva prop para indicar si estamos en modo de selección para unir
   onClick?: (table: TableData) => void;
   onLongPress?: (table: TableData) => void; // Nueva prop para pulsación sostenida
   onDragStart?: (table: TableData) => void;
@@ -50,6 +52,8 @@ interface TableComponentProps {
 const TableComponent: React.FC<TableComponentProps> = ({
   table,
   isSelected = false,
+  isSelectedForMerge = false,
+  isMergeSelectionMode = false,
   onClick,
   onLongPress,
   onDragStart,
@@ -81,6 +85,10 @@ const TableComponent: React.FC<TableComponentProps> = ({
   // Estados para pulsación sostenida
   const [longPressTimer, setLongPressTimer] = useState<NodeJS.Timeout | null>(null);
   const [isLongPressing, setIsLongPressing] = useState(false);
+  
+  // Estado para tooltip
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [tooltipTimer, setTooltipTimer] = useState<NodeJS.Timeout | null>(null);
 
   // Actualizar posición y rotación cuando cambia la prop table
   useEffect(() => {
@@ -150,6 +158,11 @@ const TableComponent: React.FC<TableComponentProps> = ({
 
   // Función para iniciar temporizador de pulsación sostenida
   const startLongPressTimer = (e: React.MouseEvent | React.TouchEvent) => {
+    // Verificar si se puede hacer long press
+    if (!canLongPress()) {
+      return;
+    }
+    
     if (longPressTimer) {
       clearTimeout(longPressTimer);
     }
@@ -169,6 +182,15 @@ const TableComponent: React.FC<TableComponentProps> = ({
       setLongPressTimer(null);
     }
     setIsLongPressing(false);
+  };
+
+  // Función para determinar si se puede hacer long press
+  const canLongPress = () => {
+    // No permitir long press en cuentas por nombre que tienen cliente asociado
+    if (table.id.startsWith('account-') && table.assignedCustomer) {
+      return false;
+    }
+    return true;
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -247,7 +269,9 @@ const TableComponent: React.FC<TableComponentProps> = ({
     }
   };
 
-  const size = 80 * scale;
+  // Tamaño base: 80px para mesas físicas, 100px para cuentas por nombre
+  const baseSize = table.id.startsWith('account-') ? 100 : 80;
+  const size = baseSize * scale;
 
   // Manejar cambio de rotación
   const handleRotationChange = (newRotation: number) => {
@@ -266,27 +290,35 @@ const TableComponent: React.FC<TableComponentProps> = ({
     }
   }, [isDragging, dragStart, scale, size, currentPosition]);
 
-  // Limpiar temporizador cuando el componente se desmonte
+  // Limpiar temporizadores cuando el componente se desmonte
   useEffect(() => {
     return () => {
       if (longPressTimer) {
         clearTimeout(longPressTimer);
       }
+      if (tooltipTimer) {
+        clearTimeout(tooltipTimer);
+      }
     };
-  }, [longPressTimer]);
+  }, [longPressTimer, tooltipTimer]);
 
   return (
     <div
       ref={tableRef}
       className={`absolute transition-all duration-200 ${
         isSelected ? 'ring-4 ring-primary-500' : ''
+      } ${
+        isSelectedForMerge ? 'ring-4 ring-blue-500 animate-pulse' : ''
+      } ${
+        table.mergeGroup && !table.isMaster ? 'ring-2 ring-blue-400 ring-opacity-50' : ''
       }`}
       style={{
         left: isNaN(currentPosition.x) ? 100 : currentPosition.x * scale,
         top: isNaN(currentPosition.y) ? 100 : currentPosition.y * scale,
         width: size,
         height: size,
-        cursor: isDraggable ? (isDragging ? 'grabbing' : 'grab') : 'pointer',
+        cursor: isDraggable ? (isDragging ? 'grabbing' : 'grab') : 
+                (table.id.startsWith('account-') && table.assignedCustomer) ? 'default' : 'pointer',
         zIndex: isDragging ? 1000 : 1,
         transform: `rotate(${currentRotation}deg)`,
         transformOrigin: 'center'
@@ -299,8 +331,29 @@ const TableComponent: React.FC<TableComponentProps> = ({
       }}
       onMouseDown={handleMouseDown}
       onMouseUp={handleMouseUp}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+      onMouseEnter={() => {
+        setIsHovered(true);
+        if (canLongPress()) {
+          // Limpiar timer existente
+          if (tooltipTimer) {
+            clearTimeout(tooltipTimer);
+          }
+          // Mostrar tooltip después de 500ms
+          const timer = setTimeout(() => {
+            setShowTooltip(true);
+          }, 500);
+          setTooltipTimer(timer);
+        }
+      }}
+      onMouseLeave={() => {
+        setIsHovered(false);
+        setShowTooltip(false);
+        // Limpiar timer al salir
+        if (tooltipTimer) {
+          clearTimeout(tooltipTimer);
+          setTooltipTimer(null);
+        }
+      }}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       onContextMenu={(e) => {
@@ -315,33 +368,47 @@ const TableComponent: React.FC<TableComponentProps> = ({
         }`}
         style={{ pointerEvents: 'none' }}
       >
-        {/* Número de mesa */}
-        <div className="text-lg font-bold">
-          {table.number}
-        </div>
+        {/* Número de mesa - solo para mesas físicas, no para cuentas por nombre */}
+        {!table.id.startsWith('account-') && (
+          <div className="text-lg font-bold">
+            {table.number}
+          </div>
+        )}
         
-        {/* Nombre temporal (prioridad sobre el nombre permanente) */}
-        {table.temporaryName ? (
+        {/* Nombre para cuentas por nombre - diseño optimizado */}
+        {table.id.startsWith('account-') && (table.temporaryName || table.name) && (
+          <div className="text-xs font-bold text-center text-gray-800 px-1 py-1 leading-tight max-w-full overflow-hidden flex items-center justify-center min-h-0">
+            <div className="break-words hyphens-auto" style={{ wordBreak: 'break-word', hyphens: 'auto' }}>
+              {table.temporaryName || table.name}
+            </div>
+          </div>
+        )}
+        
+        {/* Nombre temporal para mesas físicas (prioridad sobre el nombre permanente) */}
+        {!table.id.startsWith('account-') && table.temporaryName && (
           <div className="text-sm font-bold text-center bg-blue-100 text-blue-800 px-2 py-1 rounded">
             {table.temporaryName}
           </div>
-        ) : table.name ? (
+        )}
+        
+        {/* Nombre permanente para mesas físicas */}
+        {!table.id.startsWith('account-') && !table.temporaryName && table.name && (
           <div className="text-sm font-bold opacity-75 text-center">
             {table.name}
           </div>
-        ) : null}
+        )}
 
-        {/* Cliente asignado */}
-        {table.assignedCustomer && (
+        {/* Cliente asignado - solo para mesas físicas, no para cuentas por nombre */}
+        {!table.id.startsWith('account-') && table.assignedCustomer && (
           <div className="text-xs font-medium text-center bg-green-100 text-green-800 px-2 py-1 rounded mt-1">
             👤 {table.assignedCustomer.name} {table.assignedCustomer.lastName}
           </div>
         )}
 
-        {/* Etiqueta de unión de mesas */}
+        {/* Etiqueta de unión de mesas - solo mostrar icono, no el ID */}
         {table.mergedWith && (
-          <div className="absolute -top-2 -right-2 bg-blue-600 text-white text-xs px-2 py-1 rounded-full border-2 border-white shadow-lg">
-            🔗{table.mergedWith}
+          <div className="absolute -top-2 -right-2 bg-blue-600 text-white text-xs px-1.5 py-0.5 rounded-full border-2 border-white shadow-lg">
+            🔗
           </div>
         )}
 
@@ -370,10 +437,10 @@ const TableComponent: React.FC<TableComponentProps> = ({
               </div>
             )}
 
-            {/* Etiqueta para mesa secundaria unida - solo indicador visual */}
+            {/* Etiqueta para mesa secundaria unida - indicador más prominente */}
             {table.mergeGroup && !table.isMaster && (
-              <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white text-xs px-1 py-0.5 rounded-full">
-                🔗
+              <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white text-xs px-2 py-1 rounded-md shadow-md border border-white">
+                🔗 Mesa Secundaria
               </div>
             )}
           </>
@@ -394,6 +461,31 @@ const TableComponent: React.FC<TableComponentProps> = ({
             'bg-yellow-500'
           }`}
         />
+
+        {/* Indicador de selección para unir */}
+        {isSelectedForMerge && (
+          <div className="absolute -left-1 -bottom-1 w-4 h-4 rounded-full border-2 border-white bg-blue-500 flex items-center justify-center">
+            <span className="text-white text-xs">✓</span>
+          </div>
+        )}
+
+        {/* Indicador de modo de selección para unir */}
+        {isMergeSelectionMode && !isSelectedForMerge && !table.mergedWith && !table.mergeGroup && (
+          <div className="absolute inset-0 border-2 border-blue-400 border-dashed rounded-lg bg-blue-50 bg-opacity-30 flex items-center justify-center">
+            <div className="bg-blue-500 text-white text-xs px-2 py-1 rounded-full">
+              🔗
+            </div>
+          </div>
+        )}
+        
+        {/* Overlay para mesas secundarias no seleccionables */}
+        {table.mergeGroup && !table.isMaster && (
+          <div className="absolute inset-0 bg-gray-400 bg-opacity-20 rounded-lg flex items-center justify-center">
+            <div className="bg-gray-600 text-white text-xs px-2 py-1 rounded-full">
+              🔒
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Manejador de rotación */}
@@ -409,6 +501,17 @@ const TableComponent: React.FC<TableComponentProps> = ({
             height: size
           }}
         />
+      )}
+
+      {/* Tooltip para edición de nombre */}
+      {showTooltip && canLongPress() && (
+        <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded shadow-lg z-50 whitespace-nowrap">
+          <div className="flex items-center space-x-1">
+            <span>✏️ Pulsa sostenido para cambiar nombre</span>
+          </div>
+          {/* Flecha del tooltip */}
+          <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-800"></div>
+        </div>
       )}
     </div>
   );

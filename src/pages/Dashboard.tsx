@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Search, 
   ShoppingCart, 
@@ -18,7 +18,7 @@ import {
 import toast from 'react-hot-toast';
 import TableSelectorModal from '../components/Table/TableSelectorModal';
 import PaymentModal from '../components/Payment/PaymentModal';
-import MergeTablesModal from '../components/Table/MergeTablesModal';
+
 import NumericKeypad from '../components/NumericKeypad';
 import TariffSelectorModal from '../components/TariffSelectorModal';
 import CombinationSelectorModal from '../components/CombinationSelectorModal';
@@ -36,6 +36,7 @@ import TransferAccountModal from '../components/TransferAccountModal';
 import CustomerSelectorModal from '../components/CustomerSelectorModal';
 import PriceInputModal from '../components/PriceInputModal';
 import PendingChangesModal from '../components/PendingChangesModal';
+
 import { calculateTotalBase, calculateTotalVAT, calculateTotalWithVAT, formatPrice } from '../utils/taxUtils';
 import { ProductTariff } from '../types/product';
 import { db } from '../database/db';
@@ -64,7 +65,7 @@ const Dashboard: React.FC = () => {
   const [isTableModalOpen, setIsTableModalOpen] = useState(false); // No abrir automáticamente al inicio
   const [isTicketWithoutTable, setIsTicketWithoutTable] = useState(false); // Para tickets sin mesa
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+
   const [showNumericKeypad, setShowNumericKeypad] = useState(false);
   const [editingPriceFor, setEditingPriceFor] = useState<string | null>(null);
   const [showTariffSelector, setShowTariffSelector] = useState(false);
@@ -97,6 +98,10 @@ const Dashboard: React.FC = () => {
   const [customerToEdit, setCustomerToEdit] = useState<Customer | null>(null);
   // Modal de traslado de cuenta
   const [showTransferModal, setShowTransferModal] = useState(false);
+  
+  // Estados para recarga desde consulta de saldo
+  const [showRechargeModal, setShowRechargeModal] = useState(false);
+  const [customerForRecharge, setCustomerForRecharge] = useState<Customer | null>(null);
   // Modal de selección de clientes
   const [showCustomerSelectorModal, setShowCustomerSelectorModal] = useState(false);
   // Edición de tickets (desde Pedidos)
@@ -115,6 +120,21 @@ const Dashboard: React.FC = () => {
   const { products, categories } = useProducts();
   const { customers, updateCustomer, getCustomerByCardCode } = useCustomers();
   const { incentives } = useBalanceIncentives();
+
+  // Manejar estado de recarga desde consulta de saldo
+  React.useEffect(() => {
+    const location = window.location;
+    const state = (location as any).state;
+    
+    if (state?.selectedCustomerForRecharge && state?.showRechargeModal) {
+      setCustomerForRecharge(state.selectedCustomerForRecharge);
+      setShowRechargeModal(true);
+      setSelectedCustomer(state.selectedCustomerForRecharge);
+      
+      // Limpiar el estado de la URL
+      window.history.replaceState({}, document.title);
+    }
+  }, []);
 
   // Solo productos activos
   const activeProducts = products.filter(p => p.isActive);
@@ -1164,6 +1184,8 @@ const Dashboard: React.FC = () => {
               </div>
             </div>
           )}
+          
+
           {isTicketWithoutTable && (
             <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl text-center">
               <div className="flex items-center justify-center space-x-2 text-blue-700">
@@ -1535,13 +1557,6 @@ const Dashboard: React.FC = () => {
                     <Calculator className="w-3 h-3" />
                     <span>Dividir</span>
                   </button>
-                  <button 
-                    onClick={() => setIsMergeModalOpen(true)}
-                    className="bg-blue-100 hover:bg-blue-200 text-blue-700 py-2 px-2 rounded-lg font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-md text-xs"
-                  >
-                    <Link2 className="w-3 h-3" />
-                    <span>Unir</span>
-                  </button>
                 </div>
                 
                 {/* Botones principales - Cobrar y Vaciar */}
@@ -1581,6 +1596,8 @@ const Dashboard: React.FC = () => {
               <Settings className="w-3 h-3" />
               <span>Configuración</span>
             </button>
+            
+
           </div>
         </div>
       </div>
@@ -1599,7 +1616,7 @@ const Dashboard: React.FC = () => {
        <PaymentModal
          isOpen={isPaymentModalOpen}
          onClose={() => setIsPaymentModalOpen(false)}
-         allowPartialPayment={!selectedCustomer && selectedTable && !isTicketWithoutTable ? selectedTable.status === 'occupied' : false}
+         allowPartialPayment={selectedTable && !isTicketWithoutTable ? selectedTable.status === 'occupied' : false}
          partialPayments={selectedTable && !isTicketWithoutTable ? getPartialPayments(selectedTable.id) : []}
          totalPartialPayments={selectedTable && !isTicketWithoutTable ? getTotalPartialPayments(selectedTable.id) : 0}
          isTicketWithoutTable={isTicketWithoutTable}
@@ -1609,6 +1626,19 @@ const Dashboard: React.FC = () => {
            // Actualizar el total de la mesa restando el cobro parcial
            updateTableTotalAfterPartialPayment(selectedTable!.id, amount);
            toast.success(`Cobro parcial de ${getCurrencySymbol()}${amount.toFixed(2)} registrado`);
+           
+           // Cerrar el modal de pago
+           setIsPaymentModalOpen(false);
+           
+           // Limpiar el carrito local
+           setCurrentOrder([]);
+           setSelectedCustomer(null);
+           
+           // Deseleccionar la mesa actual
+           setSelectedTable(null);
+           
+           // Abrir modal de selección de mesas para continuar trabajando
+           setIsTableModalOpen(true);
          } : undefined}
          onPaymentComplete={async () => {
            // Si estamos cobrando una diferencia de ticket editado, ahora SÍ guardamos
@@ -1646,6 +1676,13 @@ const Dashboard: React.FC = () => {
                  const partialPayments = getPartialPayments(selectedTable.id);
                  if (partialPayments.length > 0) {
                    clearPartialPayments(selectedTable.id);
+                 }
+                 
+                 // Si es una cuenta por nombre y hay productos en el carrito, guardar el pedido antes de cobrar
+                 if (selectedTable.id.startsWith('account-') && currentOrder.length > 0) {
+                   const { total, subtotal, tax } = calculateTotal();
+                   addOrderToTable(selectedTable.id, total, currentOrder, selectedCustomer, true);
+                   console.log('Pedido guardado en cuenta por nombre antes del cobro:', selectedTable.name);
                  }
                  
                  // Limpiar el pedido de la mesa
@@ -1709,11 +1746,7 @@ const Dashboard: React.FC = () => {
          selectedCustomer={selectedCustomer}
        />
 
-       {/* Modal de unión de mesas */}
-       <MergeTablesModal
-         isOpen={isMergeModalOpen}
-         onClose={() => setIsMergeModalOpen(false)}
-       />
+
 
                {/* Teclado numérico */}
         {showNumericKeypad && editingPriceFor && (
@@ -1790,6 +1823,26 @@ const Dashboard: React.FC = () => {
              }}
              customer={customerToEdit}
              onSave={handleCustomerUpdate}
+           />
+         )}
+
+         {/* Modal de recarga desde consulta de saldo */}
+         {showRechargeModal && customerForRecharge && (
+           <CustomerModal
+             isOpen={showRechargeModal}
+             onClose={() => {
+               setShowRechargeModal(false);
+               setCustomerForRecharge(null);
+               setSelectedCustomer(null);
+             }}
+             customer={customerForRecharge}
+             onSave={(updatedCustomer) => {
+               handleCustomerUpdate(updatedCustomer);
+               setShowRechargeModal(false);
+               setCustomerForRecharge(null);
+               // Abrir modal de cobro después de la recarga
+               setIsPaymentModalOpen(true);
+             }}
            />
          )}
 

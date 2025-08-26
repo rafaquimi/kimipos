@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { X, Receipt, CreditCard, DollarSign, Printer, User } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useConfig } from '../../contexts/ConfigContext';
 import { useCustomers } from '../../contexts/CustomerContext';
+
 import { db } from '../../database/db';
 import { formatPrice } from '../../utils/taxUtils';
 import { generatePOSTicketPDF, openPDFInNewWindow, calculateTaxBreakdown } from '../../utils/pdfGenerator';
@@ -81,10 +83,12 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     pendingAmount: number;
     paymentMethod: 'cash' | 'card';
   } | null>(null);
+
   
   const { getCurrencySymbol, config } = useConfig();
-  const { refreshCustomers, updateCustomer } = useCustomers();
+  const { refreshCustomers, updateCustomer, customers } = useCustomers();
   const { addClosedTicket } = useClosedTickets();
+
 
   const currencySymbol = getCurrencySymbol();
   const isRefund = total < 0;
@@ -144,10 +148,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     setPartialPaymentData(null);
   };
 
-  // Lógica para saldo del cliente
-  const customerBalance = selectedCustomer?.balance || 0;
-  const hasCustomerBalance = customerBalance > 0;
-  
+
+
   // Verificar si es una recarga y usar esos datos si están disponibles
   const rechargeData = localStorage.getItem('rechargeData');
   let effectiveOrderItems = orderItems;
@@ -157,6 +159,17 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   let effectiveCustomerName = customerName;
   let effectiveTableNumber = tableNumber;
   let effectiveTicketId: string | undefined;
+  let isRecharge = false;
+
+
+
+  // Obtener el cliente actualizado de la lista
+  const updatedCustomer = selectedCustomer ? customers.find(c => c.id === selectedCustomer.id) : null;
+  const currentCustomer = updatedCustomer || selectedCustomer;
+  
+  // Lógica para saldo del cliente
+  const customerBalance = currentCustomer?.balance || 0;
+  const hasCustomerBalance = customerBalance > 0 && !isRecharge; // No permitir usar saldo en recargas
 
   // Si es una recarga, usar los datos del localStorage
   if (rechargeData && isTicketWithoutTable) {
@@ -167,6 +180,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       effectiveTax = parsedRechargeData.tax || tax;
       effectiveTotal = parsedRechargeData.total || total;
       effectiveTicketId = parsedRechargeData.ticketId;
+      isRecharge = true;
     } catch (error) {
       console.error('Error parsing recharge data:', error);
     }
@@ -212,6 +226,13 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       }
     }
   }, [remainingPaymentMethod, remainingAmount, remainingCardAmount, remainingCashReceived]);
+
+  // Refrescar datos del cliente cuando se abre el modal
+  useEffect(() => {
+    if (isOpen && selectedCustomer) {
+      refreshCustomers();
+    }
+  }, [isOpen, selectedCustomer, refreshCustomers]);
 
   // Calcular saldo a usar
   useEffect(() => {
@@ -268,14 +289,14 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     }
     
     // Si se usó saldo del cliente, generar recibo de pago con saldo
-    if (useBalance && selectedCustomer && balanceAmount > 0) {
+    if (useBalance && currentCustomer && balanceAmount > 0) {
       try {
-        const newBalance = selectedCustomer.balance - balanceAmount;
-        await updateCustomer(selectedCustomer.id, {
-          ...selectedCustomer,
+        const newBalance = currentCustomer.balance - balanceAmount;
+        await updateCustomer(currentCustomer.id, {
+          ...currentCustomer,
           balance: newBalance
         });
-        console.log(`Saldo actualizado para ${selectedCustomer.name}: ${selectedCustomer.balance} -> ${newBalance}`);
+        console.log(`Saldo actualizado para ${currentCustomer.name}: ${currentCustomer.balance} -> ${newBalance}`);
         
         // Generar recibo de pago con saldo
         const balanceReceiptId = formatReceiptId(getNextReceiptId());
@@ -289,7 +310,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           total: balanceAmount, // Solo el monto pagado con saldo
           paymentMethod: 'balance' as const,
           mergedTableNumber: mergedTableNumber,
-          selectedCustomer: selectedCustomer,
+          selectedCustomer: currentCustomer,
           useBalance: true,
           balanceAmount: balanceAmount,
           remainingAmount: remainingAmount,
@@ -308,7 +329,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           businessData: config.businessData
         });
         
-        const fileName = `recibo-saldo-${selectedCustomer.name}-${new Date().toISOString().slice(0, 10)}`;
+        const fileName = `recibo-saldo-${currentCustomer.name}-${new Date().toISOString().slice(0, 10)}`;
         openPDFInNewWindow(pdfDataUrl, fileName);
         
         // Guardar recibo de pago con saldo
@@ -376,6 +397,23 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         
       } catch (error) {
         console.error('Error actualizando saldo del cliente:', error);
+        alert('Error al actualizar el saldo del cliente');
+        return;
+      }
+    }
+
+    // Si es una recarga, actualizar el saldo del cliente
+    if (isRecharge && selectedCustomer) {
+      try {
+        const rechargeAmount = effectiveTotal;
+        const newBalance = selectedCustomer.balance + rechargeAmount;
+        await updateCustomer(selectedCustomer.id, {
+          ...selectedCustomer,
+          balance: newBalance
+        });
+        console.log(`Recarga completada para ${selectedCustomer.name}: ${selectedCustomer.balance} -> ${newBalance}`);
+      } catch (error) {
+        console.error('Error actualizando saldo del cliente en recarga:', error);
         alert('Error al actualizar el saldo del cliente');
         return;
       }
@@ -494,13 +532,13 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                 </div>
 
                 {/* Opción de usar saldo del cliente */}
-                {selectedCustomer && hasCustomerBalance && (
+                {currentCustomer && !isRecharge && customerBalance > 0 && customerBalance >= actualPendingAmount && (
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center space-x-2">
                         <User className="w-5 h-5 text-blue-600" />
                         <span className="font-semibold text-blue-800">
-                          {selectedCustomer.name} {selectedCustomer.lastName}
+                          {currentCustomer.name} {currentCustomer.lastName}
                         </span>
                       </div>
                       <span className="text-sm text-blue-600">
@@ -728,6 +766,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         pendingAmount={partialPaymentData?.pendingAmount || 0}
         currencySymbol={currencySymbol}
       />
+
+
     </div>
   );
 };

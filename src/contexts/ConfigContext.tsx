@@ -29,6 +29,8 @@ interface RestaurantConfig {
     global: string[];
     byCategory: Record<string, string[]>; // categoryId -> modifiers
   };
+  // Configuración de interfaz
+  enableOnScreenKeyboard?: boolean;
 }
 
 interface ConfigContextType {
@@ -84,7 +86,8 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           email: '',
           city: '',
         },
-        modifiers: parsed.modifiers ?? { global: [], byCategory: {} }
+        modifiers: parsed.modifiers ?? { global: [], byCategory: {} },
+        enableOnScreenKeyboard: parsed.enableOnScreenKeyboard ?? true
       } as RestaurantConfig;
     }
     
@@ -112,7 +115,8 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         email: '',
         city: '',
       },
-      modifiers: { global: [], byCategory: {} }
+      modifiers: { global: [], byCategory: {} },
+      enableOnScreenKeyboard: true
     };
   });
 

@@ -63,8 +63,9 @@ interface TableContextType {
 	updateDecorPosition: (id: string, x: number, y: number) => void;
 	updateDecorRotation: (id: string, rotation: number) => void;
 	// Cuentas por nombre
-	addNamedAccount: (customerName: string) => string;
+	addNamedAccount: (customerName: string, assignedCustomer?: any) => string;
 	removeNamedAccount: (accountId: string) => void;
+	reorganizeNamedAccounts: () => void;
 	// Cobros parciales
 	addPartialPayment: (tableId: string, amount: number, paymentMethod: 'cash' | 'card') => PartialPayment;
 	getPartialPayments: (tableId: string) => PartialPayment[];
@@ -268,6 +269,39 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
 		// Si es una cuenta por nombre, eliminarla completamente del salón
 		if (tableId.startsWith('account-')) {
+			// Si la cuenta por nombre está unida, eliminar todas las cuentas por nombre del grupo
+			if (table && table.mergeGroup) {
+				const mergeGroup = getTableMergeGroup(tableId);
+				const namedAccountsInGroup = mergeGroup.filter(t => t.id.startsWith('account-'));
+				
+				// Eliminar todas las cuentas por nombre del grupo
+				namedAccountsInGroup.forEach(account => {
+					removeNamedAccount(account.id);
+				});
+				
+				// Limpiar propiedades de unión de las mesas físicas del grupo (si las hay)
+				const physicalTablesInGroup = mergeGroup.filter(t => !t.id.startsWith('account-'));
+				if (physicalTablesInGroup.length > 0) {
+					setSalons(prev => prev.map(s => ({
+						...s,
+						tables: s.tables.map(t => physicalTablesInGroup.some(pt => pt.id === t.id) ? ({
+							...t,
+							mergedWith: undefined,
+							isMaster: undefined,
+							mergeGroup: undefined,
+							status: 'available',
+							occupiedSince: undefined,
+							currentOrder: undefined,
+							temporaryName: undefined,
+							assignedCustomer: undefined
+						}) : t)
+					})));
+				}
+				
+				return;
+			}
+			
+			// Si no está unida, eliminar solo esta cuenta
 			removeNamedAccount(tableId);
 			return;
 		}
@@ -536,7 +570,7 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 	};
 
 	// Funciones para cuentas por nombre
-	const addNamedAccount = (customerName: string): string => {
+	const addNamedAccount = (customerName: string, assignedCustomer?: any): string => {
 		// Verificar si ya existe una cuenta con ese nombre
 		const existingAccount = salons
 			.find(s => s.id === 'named-accounts')
@@ -551,16 +585,76 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 			.find(s => s.id === 'named-accounts')
 			?.tables || [];
 		
-		// Calcular posición en fila (4 cuentas por fila)
-		const accountsPerRow = 4;
-		const row = Math.floor(existingAccounts.length / accountsPerRow);
-		const col = existingAccounts.length % accountsPerRow;
+		// Función inteligente para encontrar una posición libre
+		const findFreePosition = () => {
+			const baseX = 50;
+			const baseY = 50;
+			const spacingX = 110; // Espacio horizontal entre cuentas
+			const spacingY = 110; // Espacio vertical entre filas
+			const tolerance = 20; // Tolerancia para considerar posiciones "iguales"
+			const maxRows = 15; // Máximo número de filas a buscar
+			const maxCols = 8; // Máximo número de columnas a buscar
+			
+			console.log(`🔍 Buscando posición libre para nueva cuenta. Cuentas existentes: ${existingAccounts.length}`);
+			
+			// Crear una matriz de posiciones ocupadas para búsqueda más eficiente
+			const occupiedPositions = new Set();
+			existingAccounts.forEach(account => {
+				const gridX = Math.round((account.x - baseX) / spacingX);
+				const gridY = Math.round((account.y - baseY) / spacingY);
+				occupiedPositions.add(`${gridX},${gridY}`);
+			});
+			
+			console.log('🔍 Posiciones ocupadas:', Array.from(occupiedPositions));
+			
+			// Buscar la primera posición libre en orden secuencial
+			for (let row = 0; row < maxRows; row++) {
+				for (let col = 0; col < maxCols; col++) {
+					const gridKey = `${col},${row}`;
+					
+					if (!occupiedPositions.has(gridKey)) {
+						const newX = baseX + (col * spacingX);
+						const newY = baseY + (row * spacingY);
+						
+						console.log(`✅ Posición libre encontrada: (${col}, ${row}) -> (${newX}, ${newY})`);
+						
+						return { x: newX, y: newY };
+					}
+				}
+			}
+			
+			// Si no se encuentra posición libre en la cuadrícula, buscar en posiciones alternativas
+			console.log('⚠️ No se encontró posición libre en cuadrícula, buscando posición alternativa...');
+			
+			// Buscar en una cuadrícula expandida
+			for (let row = 0; row < maxRows + 5; row++) {
+				for (let col = 0; col < maxCols + 2; col++) {
+					const testX = baseX + (col * spacingX);
+					const testY = baseY + (row * spacingY);
+					
+					// Verificar si hay alguna cuenta cercana
+					const isOccupied = existingAccounts.some(account => 
+						Math.abs(account.x - testX) < tolerance && 
+						Math.abs(account.y - testY) < tolerance
+					);
+					
+					if (!isOccupied) {
+						console.log(`✅ Posición alternativa encontrada: (${testX}, ${testY})`);
+						return { x: testX, y: testY };
+					}
+				}
+			}
+			
+			// Último recurso: posición al final de la lista
+			console.log('⚠️ Usando posición de último recurso');
+			const lastAccount = existingAccounts[existingAccounts.length - 1];
+			const fallbackX = lastAccount ? lastAccount.x + spacingX : baseX;
+			const fallbackY = lastAccount ? lastAccount.y : baseY;
+			
+			return { x: fallbackX, y: fallbackY };
+		};
 		
-		// Posiciones base para las cuentas (ajustar según el tamaño del salón)
-		const baseX = 120;
-		const baseY = 120;
-		const spacingX = 120; // Espacio horizontal entre cuentas
-		const spacingY = 120; // Espacio vertical entre filas
+		const position = findFreePosition();
 
 		const accountId = `account-${Date.now()}`;
 		const newAccount: TableData = {
@@ -568,11 +662,12 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 			number: customerName,
 			name: customerName,
 			status: 'occupied',
-			x: baseX + (col * spacingX),
-			y: baseY + (row * spacingY),
+			x: position.x,
+			y: position.y,
 			capacity: 1,
 			occupiedSince: new Date(),
-			temporaryName: customerName
+			temporaryName: customerName,
+			assignedCustomer: assignedCustomer
 		};
 
 		setSalons(prev => prev.map(s => s.id !== 'named-accounts' ? s : ({
@@ -595,6 +690,56 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 			delete newItems[accountId];
 			return newItems;
 		});
+
+		// Limpiar cobros parciales asociados
+		setPartialPayments(prev => {
+			const newPayments = { ...prev };
+			delete newPayments[accountId];
+			return newPayments;
+		});
+	};
+
+	// Función para reorganizar cuentas por nombre que puedan estar superpuestas
+	const reorganizeNamedAccounts = () => {
+		const namedAccountsSalon = salons.find(s => s.id === 'named-accounts');
+		if (!namedAccountsSalon) return;
+
+		const accounts = namedAccountsSalon.tables;
+		if (accounts.length === 0) return;
+
+		// Configuración de la cuadrícula
+		const baseX = 50;
+		const baseY = 50;
+		const spacingX = 110; // Espacio entre cuentas horizontalmente
+		const spacingY = 110; // Espacio entre cuentas verticalmente
+		const accountsPerRow = 5; // 5 cuentas por fila
+
+		console.log(`Reorganizando ${accounts.length} cuentas por nombre...`);
+
+		// Reorganizar las cuentas en una cuadrícula limpia
+		const reorganizedAccounts = accounts.map((account, index) => {
+			const row = Math.floor(index / accountsPerRow);
+			const col = index % accountsPerRow;
+			
+			const newX = baseX + (col * spacingX);
+			const newY = baseY + (row * spacingY);
+			
+			console.log(`Cuenta ${account.number || account.name}: (${account.x}, ${account.y}) -> (${newX}, ${newY})`);
+			
+			return {
+				...account,
+				x: newX,
+				y: newY
+			};
+		});
+
+		// Actualizar el estado
+		setSalons(prev => prev.map(s => s.id !== 'named-accounts' ? s : ({
+			...s,
+			tables: reorganizedAccounts
+		})));
+
+		console.log('Cuentas por nombre reorganizadas exitosamente');
 	};
 
 	// Funciones para cobros parciales
@@ -677,6 +822,7 @@ export const TableProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		updateDecorRotation,
 		addNamedAccount,
 		removeNamedAccount,
+		reorganizeNamedAccounts,
 		addPartialPayment,
 		getPartialPayments,
 		getTotalPartialPayments,

@@ -2,23 +2,27 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Search, User, Plus, X, ChevronDown, CreditCard, Mail, Phone } from 'lucide-react';
 import { useCustomers, Customer } from '../contexts/CustomerContext';
 import { useNavigate } from 'react-router-dom';
+import { useKeyboardEnabled } from '../hooks/useKeyboardEnabled';
 
 interface CustomerSelectorProps {
   selectedCustomer: Customer | null;
   onCustomerSelect: (customer: Customer | null) => void;
   placeholder?: string;
+  inModal?: boolean;
 }
 
 const CustomerSelector: React.FC<CustomerSelectorProps> = ({
   selectedCustomer,
   onCustomerSelect,
-  placeholder = "Seleccionar cliente..."
+  placeholder = "Seleccionar cliente...",
+  inModal = false
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { customers, searchCustomers } = useCustomers();
   const navigate = useNavigate();
+  const isKeyboardEnabled = useKeyboardEnabled();
 
   // Filtrar clientes basado en el término de búsqueda
   const filteredCustomers = searchTerm ? searchCustomers(searchTerm) : customers;
@@ -64,61 +68,67 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({
 
   return (
     <div className="relative" ref={dropdownRef}>
-      {/* Campo de selección */}
-      <div
-        onClick={() => {
-          console.log('Click en selector de cliente, isOpen:', isOpen);
-          setIsOpen(!isOpen);
-        }}
-        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white shadow-sm transition-all duration-200 hover:shadow-md cursor-pointer flex items-center justify-between"
-      >
-        <div className="flex items-center space-x-3 min-w-0 flex-1">
-          {selectedCustomer ? (
-            <>
-              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <User className="w-4 h-4 text-blue-600" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="font-medium text-gray-900 truncate">
-                  {selectedCustomer.name} {selectedCustomer.lastName}
+      {/* Campo de selección - solo mostrar si NO está en modal */}
+      {!inModal && (
+        <div
+          onClick={() => {
+            console.log('Click en selector de cliente, isOpen:', isOpen);
+            setIsOpen(!isOpen);
+          }}
+          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white shadow-sm transition-all duration-200 hover:shadow-md cursor-pointer flex items-center justify-between"
+        >
+          <div className="flex items-center space-x-3 min-w-0 flex-1">
+            {selectedCustomer ? (
+              <>
+                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <User className="w-4 h-4 text-blue-600" />
                 </div>
-                <div className="text-xs text-gray-500 truncate">
-                  {selectedCustomer.email || selectedCustomer.phone || selectedCustomer.cardCode}
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium text-gray-900 truncate">
+                    {selectedCustomer.name} {selectedCustomer.lastName}
+                  </div>
+                  <div className="text-xs text-gray-500 truncate">
+                    {selectedCustomer.email || selectedCustomer.phone || selectedCustomer.cardCode}
+                  </div>
                 </div>
+              </>
+            ) : (
+              <>
+                <User className="w-4 h-4 text-gray-400" />
+                <span className="text-gray-500">{placeholder}</span>
+              </>
+            )}
+          </div>
+          
+          <div className="flex items-center space-x-2 flex-shrink-0">
+            {selectedCustomer && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleClearSelection();
+                }}
+                className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+            <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+            {isOpen && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-blue-500 text-white text-xs px-2 py-1 rounded">
+                Dropdown abierto
               </div>
-            </>
-          ) : (
-            <>
-              <User className="w-4 h-4 text-gray-400" />
-              <span className="text-gray-500">{placeholder}</span>
-            </>
-          )}
+            )}
+          </div>
         </div>
-        
-        <div className="flex items-center space-x-2 flex-shrink-0">
-          {selectedCustomer && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleClearSelection();
-              }}
-              className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          )}
-          <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-          {isOpen && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-blue-500 text-white text-xs px-2 py-1 rounded">
-              Dropdown abierto
-            </div>
-          )}
-        </div>
-      </div>
+      )}
 
-      {/* Dropdown */}
-      {isOpen && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white border-2 border-blue-300 rounded-xl shadow-xl z-50 overflow-hidden" style={{ zIndex: 9999, minHeight: '200px', maxHeight: '400px' }}>
+      {/* Dropdown - mostrar siempre si está en modal, o cuando isOpen si no está en modal */}
+      {(inModal || isOpen) && (
+        <div className={`${inModal ? 'relative' : 'absolute top-full left-0 right-0 mt-1'} bg-white border-2 border-blue-300 rounded-xl shadow-xl z-50 overflow-hidden`} style={{ 
+          zIndex: 9999, 
+          minHeight: inModal ? '500px' : '200px', 
+          maxHeight: inModal ? '500px' : '60vh' 
+        }}>
                       {/* Barra de búsqueda */}
             <div className="p-3 border-b border-gray-100 bg-blue-50">
               <div className="text-xs text-blue-600 mb-2 font-medium">
@@ -133,12 +143,16 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                 autoFocus
+                data-osk={isKeyboardEnabled ? undefined : "false"}
               />
             </div>
           </div>
 
           {/* Lista de clientes */}
-          <div className="overflow-y-auto" style={{ minHeight: '150px', maxHeight: '300px' }}>
+          <div className="overflow-y-auto" style={{ 
+            minHeight: inModal ? '400px' : '150px', 
+            maxHeight: inModal ? '400px' : 'calc(60vh - 120px)' 
+          }}>
             {filteredCustomers.length === 0 ? (
               <div className="p-6 text-center text-gray-500" style={{ minHeight: '120px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
                 <User className="w-12 h-12 mx-auto mb-3 text-gray-300" />

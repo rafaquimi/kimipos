@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useOnScreenKeyboard } from '../../contexts/OnScreenKeyboardContext';
+import { useConfig } from '../../contexts/ConfigContext';
 
 const keyRows = [
   ['1','2','3','4','5','6','7','8','9','0'],
@@ -10,6 +11,12 @@ const keyRows = [
 
 const OnScreenKeyboard: React.FC = () => {
   const { isOpen, currentValue, insertText, backspace, moveCaret, commit, cancel } = useOnScreenKeyboard();
+  const { config } = useConfig();
+  
+  // Si el teclado en pantalla está deshabilitado, no mostrar nada
+  if (!config.enableOnScreenKeyboard) {
+    return null;
+  }
   const [isShift, setIsShift] = useState(false);
 
   const rows = useMemo(() => (
