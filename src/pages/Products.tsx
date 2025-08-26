@@ -38,10 +38,12 @@ const Products: React.FC = () => {
     description: '',
     backgroundColor: '#3b82f6', // Color por defecto
     isActive: true,
-    taxId: '' // ID del impuesto seleccionado
+    taxId: '', // ID del impuesto seleccionado
+    askForPrice: false
   });
   const [productTariffs, setProductTariffs] = useState<ProductTariff[]>([]);
   const [productCombinations, setProductCombinations] = useState<ProductCombination[]>([]);
+  const [activeTab, setActiveTab] = useState<'basic' | 'advanced'>('basic');
 
   // Filtrar productos
   const filteredProducts = products.filter(product => {
@@ -62,7 +64,8 @@ const Products: React.FC = () => {
         description: product.description || '',
         backgroundColor: product.backgroundColor || '#3b82f6',
         isActive: product.isActive,
-        taxId: product.taxId || config.defaultTaxId || ''
+        taxId: product.taxId || config.defaultTaxId || '',
+        askForPrice: product.askForPrice || false
       });
       setProductTariffs(product.tariffs || []);
       setProductCombinations(product.combinations || []);
@@ -75,7 +78,8 @@ const Products: React.FC = () => {
         description: '',
         backgroundColor: '#3b82f6',
         isActive: true,
-        taxId: config.defaultTaxId || ''
+        taxId: config.defaultTaxId || '',
+        askForPrice: false
       });
       setProductTariffs([]);
       setProductCombinations([]);
@@ -94,7 +98,8 @@ const Products: React.FC = () => {
       description: '',
       backgroundColor: '#3b82f6',
       isActive: true,
-      taxId: ''
+      taxId: '',
+      askForPrice: false
     });
     setProductTariffs([]);
     setProductCombinations([]);
@@ -122,7 +127,8 @@ const Products: React.FC = () => {
       taxId: formData.taxId,
       tariffs: productTariffs,
       combinations: productCombinations,
-      isActive: formData.isActive
+      isActive: formData.isActive,
+      askForPrice: formData.askForPrice
     };
 
     if (editingProduct) {
@@ -364,20 +370,61 @@ const Products: React.FC = () => {
         <div className="fixed inset-0 bg-white z-50 flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b-2 border-blue-500 bg-gray-50">
-            <h3 className="text-2xl font-semibold text-gray-900">
-              {editingProduct ? 'Editar Producto' : 'Nuevo Producto'}
-            </h3>
-            <button
-              onClick={closeModal}
-              className="p-3 text-gray-400 hover:text-gray-600 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors"
-            >
-              <X className="w-6 h-6" />
-            </button>
+            <div className="flex items-center space-x-6">
+              <h3 className="text-2xl font-semibold text-gray-900">
+                {editingProduct ? 'Editar Producto' : 'Nuevo Producto'}
+              </h3>
+              {/* Pestañas */}
+              <div className="flex">
+                <button
+                  onClick={() => setActiveTab('basic')}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'basic'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Configuración Básica
+                </button>
+                <button
+                  onClick={() => setActiveTab('advanced')}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'advanced'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Configuración Avanzada
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={closeModal}
+                className="px-6 py-4 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors min-h-[48px] flex items-center justify-center text-base font-medium"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSave}
+                className="px-6 py-4 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center space-x-2 min-h-[48px] text-base font-medium"
+              >
+                <Save className="w-5 h-5" />
+                <span>Guardar</span>
+              </button>
+              <button
+                onClick={closeModal}
+                className="p-3 text-gray-400 hover:text-gray-600 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
           </div>
 
           {/* Contenido principal */}
           <div className="flex-1 p-6 overflow-hidden">
-            <div className="grid grid-cols-3 gap-4 h-full">
+            {activeTab === 'basic' ? (
+              <div className="grid grid-cols-3 gap-4 h-full">
               {/* Columna 1 - Información Básica */}
               <div className="flex flex-col h-full">
                 <div className="border-2 border-green-500 rounded-lg p-3 bg-green-50 mb-3">
@@ -498,11 +545,11 @@ const Products: React.FC = () => {
                 </div>
 
                 {/* Tarifas - Debajo de la descripción */}
-                <div className="border-2 border-orange-500 rounded-lg p-3 bg-orange-50 flex-1">
-                  <h4 className="text-sm font-semibold text-orange-800 mb-3 border-b-2 border-orange-300 pb-2">
+                <div className="border-2 border-orange-500 rounded-lg p-3 bg-orange-50 flex-1 flex flex-col">
+                  <h4 className="text-sm font-semibold text-orange-800 mb-3 border-b-2 border-orange-300 pb-2 flex-shrink-0">
                     Tarifas del Producto
                   </h4>
-                  <div className="h-full overflow-y-auto">
+                  <div className="flex-1 overflow-y-auto min-h-0" style={{ maxHeight: '300px' }}>
                     <ProductTariffManager
                       tariffs={productTariffs}
                       onChange={setProductTariffs}
@@ -513,11 +560,11 @@ const Products: React.FC = () => {
 
               {/* Columna 3 - Combinaciones */}
               <div className="flex flex-col h-full">
-                <div className="border-2 border-indigo-500 rounded-lg p-3 bg-indigo-50 flex-1">
-                  <h4 className="text-sm font-semibold text-indigo-800 mb-3 border-b-2 border-indigo-300 pb-2">
+                <div className="border-2 border-indigo-500 rounded-lg p-3 bg-indigo-50 flex-1 flex flex-col">
+                  <h4 className="text-sm font-semibold text-indigo-800 mb-3 border-b-2 border-indigo-300 pb-2 flex-shrink-0">
                     Combinaciones
                   </h4>
-                  <div className="h-[600px] overflow-y-auto">
+                  <div className="flex-1 overflow-y-auto min-h-0" style={{ maxHeight: '400px' }}>
                     <ProductCombinationManager
                       combinations={productCombinations}
                       categories={categories}
@@ -528,23 +575,42 @@ const Products: React.FC = () => {
                 </div>
               </div>
             </div>
-          </div>
-
-          {/* Botones */}
-          <div className="flex justify-end space-x-3 p-6 border-t-2 border-blue-500 bg-gray-50">
-            <button
-              onClick={closeModal}
-              className="px-6 py-4 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors min-h-[48px] flex items-center justify-center text-base font-medium"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleSave}
-              className="px-6 py-4 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center space-x-2 min-h-[48px] text-base font-medium"
-            >
-              <Save className="w-5 h-5" />
-              <span>Guardar</span>
-            </button>
+            ) : (
+              // Pestaña de Configuración Avanzada
+              <div className="h-full">
+                <div className="border-2 border-green-500 rounded-lg p-6 bg-green-50">
+                  <h4 className="text-lg font-semibold text-green-800 mb-4 border-b-2 border-green-300 pb-2">
+                    Configuración Avanzada
+                  </h4>
+                  
+                  <div className="space-y-4">
+                    {/* Pedir Precio */}
+                    <div className="bg-white rounded-lg p-4 border border-green-200">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <input
+                            type="checkbox"
+                            id="askForPrice"
+                            checked={formData.askForPrice}
+                            onChange={(e) => setFormData({ ...formData, askForPrice: e.target.checked })}
+                            className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                          />
+                          <label htmlFor="askForPrice" className="text-sm font-medium text-gray-700">
+                            Pedir precio
+                          </label>
+                        </div>
+                        <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                          Dashboard
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-600 mt-2 ml-7">
+                        Cuando esté activo, al seleccionar este producto en el dashboard aparecerá un popup solicitando el precio del producto.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

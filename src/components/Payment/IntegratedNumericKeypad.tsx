@@ -25,6 +25,7 @@ const IntegratedNumericKeypad: React.FC<IntegratedNumericKeypadProps> = ({
       initialValueRef.current = value;
     }
   }, [value, hasStartedTyping]);
+  
   const handleNumberClick = (num: string) => {
     // Si el usuario no ha empezado a escribir, comenzar de nuevo
     if (!hasStartedTyping) {
@@ -60,58 +61,119 @@ const IntegratedNumericKeypad: React.FC<IntegratedNumericKeypadProps> = ({
     }
   };
 
-  const numbers = [
-    ['7', '8', '9'],
-    ['4', '5', '6'],
-    ['1', '2', '3'],
-    ['0', '.', 'C']
-  ];
-
   return (
-    <div className={`bg-gray-50 rounded-xl p-4 ${className}`}>
+    <div className={`bg-gray-100 rounded-lg p-3 ${className}`}>
       {/* Display */}
-      <div className="mb-4">
-                 <div className="relative">
-           <div className="w-full px-4 py-3 text-right text-2xl font-bold bg-white border-2 border-gray-200 rounded-lg min-h-[60px] flex items-center justify-end pr-12">
-             <span className="text-gray-900">{value || placeholder}</span>
-           </div>
-           <span className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500 text-lg">
-             {currencySymbol}
-           </span>
-         </div>
+      <div className="mb-3">
+        <div className="relative">
+          <div className="w-full px-3 py-2 text-right text-sm font-bold bg-white border border-gray-300 rounded-md flex items-center justify-end pr-8">
+            <span className="text-gray-900">{value || placeholder}</span>
+          </div>
+          <span className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 text-sm font-medium">
+            {currencySymbol}
+          </span>
+        </div>
       </div>
 
       {/* Keypad */}
-      <div className="grid grid-cols-3 gap-2">
-        {numbers.map((row, rowIndex) => (
-          <React.Fragment key={rowIndex}>
-            {row.map((num) => (
-              <button
-                key={num}
-                onClick={() => {
-                  if (num === 'C') {
-                    handleClear();
-                  } else if (num === '.') {
-                    handleDecimalClick();
-                  } else {
-                    handleNumberClick(num);
-                  }
-                }}
-                className="aspect-square bg-white border-2 border-gray-200 rounded-lg text-xl font-semibold hover:bg-gray-50 hover:border-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {num}
-              </button>
-            ))}
-          </React.Fragment>
-        ))}
-        
+      <div className="space-y-1">
+        {/* Row 1: 7, 8, 9 */}
+        <div className="flex space-x-1">
+          <button
+            onClick={() => handleNumberClick('7')}
+            className="flex-1 h-12 bg-white border border-gray-300 rounded-md text-lg font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            7
+          </button>
+          <button
+            onClick={() => handleNumberClick('8')}
+            className="flex-1 h-12 bg-white border border-gray-300 rounded-md text-lg font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            8
+          </button>
+          <button
+            onClick={() => handleNumberClick('9')}
+            className="flex-1 h-12 bg-white border border-gray-300 rounded-md text-lg font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            9
+          </button>
+        </div>
+
+        {/* Row 2: 4, 5, 6 */}
+        <div className="flex space-x-1">
+          <button
+            onClick={() => handleNumberClick('4')}
+            className="flex-1 h-12 bg-white border border-gray-300 rounded-md text-lg font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            4
+          </button>
+          <button
+            onClick={() => handleNumberClick('5')}
+            className="flex-1 h-12 bg-white border border-gray-300 rounded-md text-lg font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            5
+          </button>
+          <button
+            onClick={() => handleNumberClick('6')}
+            className="flex-1 h-12 bg-white border border-gray-300 rounded-md text-lg font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            6
+          </button>
+        </div>
+
+        {/* Row 3: 1, 2, 3 */}
+        <div className="flex space-x-1">
+          <button
+            onClick={() => handleNumberClick('1')}
+            className="flex-1 h-12 bg-white border border-gray-300 rounded-md text-lg font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            1
+          </button>
+          <button
+            onClick={() => handleNumberClick('2')}
+            className="flex-1 h-12 bg-white border border-gray-300 rounded-md text-lg font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            2
+          </button>
+          <button
+            onClick={() => handleNumberClick('3')}
+            className="flex-1 h-12 bg-white border border-gray-300 rounded-md text-lg font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            3
+          </button>
+        </div>
+
+        {/* Row 4: 0, ., C */}
+        <div className="flex space-x-1">
+          <button
+            onClick={() => handleNumberClick('0')}
+            className="flex-1 h-12 bg-white border border-gray-300 rounded-md text-lg font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            0
+          </button>
+          <button
+            onClick={handleDecimalClick}
+            className="flex-1 h-12 bg-white border border-gray-300 rounded-md text-lg font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            .
+          </button>
+          <button
+            onClick={handleClear}
+            className="flex-1 h-12 bg-red-50 border border-red-300 rounded-md text-lg font-semibold text-red-600 hover:bg-red-100 hover:border-red-400 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+          >
+            C
+          </button>
+        </div>
+
         {/* Backspace button */}
-        <button
-          onClick={handleBackspace}
-          className="aspect-square bg-red-50 border-2 border-red-200 rounded-lg text-red-600 hover:bg-red-100 hover:border-red-300 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500"
-        >
-          ←
-        </button>
+        <div className="flex space-x-1">
+          <button
+            onClick={handleBackspace}
+            className="w-full h-12 bg-orange-50 border border-orange-300 rounded-md text-lg font-semibold text-orange-600 hover:bg-orange-100 hover:border-orange-400 transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+          >
+            ← Borrar
+          </button>
+        </div>
       </div>
     </div>
   );

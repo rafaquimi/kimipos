@@ -34,6 +34,8 @@ import CustomerSelector from '../components/CustomerSelector';
 import CustomerModal from '../components/CustomerModal';
 import TransferAccountModal from '../components/TransferAccountModal';
 import CustomerSelectorModal from '../components/CustomerSelectorModal';
+import PriceInputModal from '../components/PriceInputModal';
+import PendingChangesModal from '../components/PendingChangesModal';
 import { calculateTotalBase, calculateTotalVAT, calculateTotalWithVAT, formatPrice } from '../utils/taxUtils';
 import { ProductTariff } from '../types/product';
 import { db } from '../database/db';
@@ -87,6 +89,9 @@ const Dashboard: React.FC = () => {
     onConfirm: () => void;
     type: 'danger' | 'warning' | 'info';
   } | null>(null);
+  const [showPriceInputModal, setShowPriceInputModal] = useState(false);
+  const [selectedProductForPrice, setSelectedProductForPrice] = useState<any>(null);
+  const [showPendingChangesModal, setShowPendingChangesModal] = useState(false);
   // Modal para recargar saldo
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [customerToEdit, setCustomerToEdit] = useState<Customer | null>(null);
@@ -124,22 +129,27 @@ const Dashboard: React.FC = () => {
 
   // Funciones del carrito
   const addToOrder = (product: any, selectedTariff?: ProductTariff) => {
-    // Buscar producto existente por ID o por nombre (para manejar productos de cuentas por nombre)
+    const tariff = selectedTariff || product.tariffs?.find((t: ProductTariff) => t.isDefault) || { price: product.price };
+    const currentPrice = tariff.price;
+    
+    // Buscar producto existente por ID Y precio (para manejar cambios de precio)
     const existingItem = currentOrder.find(item => 
-      item.productId === product.id || 
-      item.productName === product.name ||
+      item.productId === product.id && 
+      item.unitPrice === currentPrice &&
       item.productName === `${product.name}${selectedTariff ? ` - ${selectedTariff.name}` : ''}`
     );
     
     if (existingItem) {
+      // Si existe con el mismo precio, incrementar cantidad
       setCurrentOrder(currentOrder.map(item =>
-        (item.productId === product.id || 
-         item.productName === product.name ||
+        (item.productId === product.id && 
+         item.unitPrice === currentPrice &&
          item.productName === `${product.name}${selectedTariff ? ` - ${selectedTariff.name}` : ''}`)
           ? { ...item, quantity: item.quantity + 1, totalPrice: (item.quantity + 1) * item.unitPrice }
           : item
       ));
     } else {
+      // Si no existe o existe con precio diferente, crear nueva línea
       const tariff = selectedTariff || product.tariffs?.find((t: ProductTariff) => t.isDefault) || { price: product.price };
       
       // Obtener información del impuesto del producto
@@ -326,8 +336,59 @@ const Dashboard: React.FC = () => {
       setSelectedProductForTariff(product);
       setShowTariffSelector(true);
     } else {
-      // Si solo tiene una tarifa o no tiene tarifas, agregar directamente
-      addToOrder(product);
+      // Si solo tiene una tarifa o no tiene tarifas, verificar askForPrice
+      if (product.askForPrice) {
+        setSelectedProductForPrice(product);
+        setShowPriceInputModal(true);
+      } else {
+        // Si no tiene askForPrice, agregar directamente
+        addToOrder(product);
+      }
+    }
+  };
+
+  const handlePriceInputConfirm = (price: number) => {
+    if (selectedProductForPrice) {
+      // Verificar si es un producto con combinación
+      if (selectedProductForPrice._combinationData) {
+        const { baseProduct, selectedProducts, combinationNames, additionalPrice, selectedTariff } = selectedProductForPrice._combinationData;
+        
+        // Crear el nombre del producto con combinación
+        let productName = `${baseProduct.name} con ${combinationNames}`;
+        if (selectedTariff) {
+          productName += ` - ${selectedTariff.name}`;
+        }
+        
+        // Usar el precio específico introducido por el usuario
+        const newItem: OrderItem = {
+          productId: baseProduct.id,
+          productName,
+          quantity: 1,
+          unitPrice: price,
+          totalPrice: price,
+          status: 'pending'
+        };
+        
+        setCurrentOrder([...currentOrder, newItem]);
+      } else if (selectedProductForPrice._selectedTariff) {
+        // Producto con tarifa seleccionada
+        const productWithSpecificPrice = {
+          ...selectedProductForPrice,
+          price: price,
+          tariffs: [{ id: 'specific-price', name: 'Precio específico', price: price, isDefault: true }]
+        };
+        addToOrder(productWithSpecificPrice);
+      } else {
+        // Producto simple sin combinación
+        const productWithSpecificPrice = {
+          ...selectedProductForPrice,
+          price: price,
+          tariffs: [{ id: 'specific-price', name: 'Precio específico', price: price, isDefault: true }]
+        };
+        addToOrder(productWithSpecificPrice);
+      }
+      
+      setSelectedProductForPrice(null);
     }
   };
 
@@ -342,6 +403,30 @@ const Dashboard: React.FC = () => {
     // Si hay una combinación pendiente para este producto, combinar ambas selecciones
     if (pendingCombination && selectedProductForTariff && pendingCombination.baseProduct.id === selectedProductForTariff.id) {
       const { baseProduct, combinationNames, additionalPrice } = pendingCombination;
+      
+      // Si el producto tiene askForPrice activo, mostrar modal de precio específico
+      if (baseProduct.askForPrice) {
+        // Guardar la información de la combinación + tarifa para usarla después
+        const combinationData = {
+          baseProduct,
+          selectedProducts: pendingCombination.selectedProducts,
+          combinationNames,
+          additionalPrice,
+          selectedTariff: tariff
+        };
+        
+        // Crear un producto temporal con la información de la combinación + tarifa
+        const productWithCombinationAndTariff = {
+          ...baseProduct,
+          _combinationData: combinationData
+        };
+        
+        setSelectedProductForPrice(productWithCombinationAndTariff);
+        setShowPriceInputModal(true);
+        setPendingCombination(null);
+        return;
+      }
+      
       const productName = `${baseProduct.name} con ${combinationNames} - ${tariff.name}`;
       const totalPrice = tariff.price + additionalPrice;
 
@@ -383,6 +468,19 @@ const Dashboard: React.FC = () => {
 
     // Caso normal: solo tarifa
     if (selectedProductForTariff) {
+      // Si el producto tiene askForPrice activo, mostrar modal de precio específico
+      if (selectedProductForTariff.askForPrice) {
+        // Crear un producto temporal con la tarifa seleccionada
+        const productWithTariff = {
+          ...selectedProductForTariff,
+          _selectedTariff: tariff
+        };
+        
+        setSelectedProductForPrice(productWithTariff);
+        setShowPriceInputModal(true);
+        return;
+      }
+      
       addToOrder(selectedProductForTariff, tariff);
     }
   };
@@ -433,6 +531,27 @@ const Dashboard: React.FC = () => {
       const categoryCombination = baseProduct.combinations.find((c: any) => c.categoryId === sp.product.categoryId);
       return total + ((categoryCombination?.additionalPrice || 0) * sp.quantity);
     }, 0);
+
+    // Si el producto tiene askForPrice activo, mostrar modal de precio específico
+    if (baseProduct.askForPrice) {
+      // Guardar la información de la combinación para usarla después
+      const combinationData = {
+        baseProduct,
+        selectedProducts,
+        combinationNames,
+        additionalPrice
+      };
+      
+      // Crear un producto temporal con la información de la combinación
+      const productWithCombination = {
+        ...baseProduct,
+        _combinationData: combinationData
+      };
+      
+      setSelectedProductForPrice(productWithCombination);
+      setShowPriceInputModal(true);
+      return;
+    }
 
     // Si hay varias tarifas, pedimos primero tarifa y luego cerramos el flujo
     if (baseProduct.tariffs && baseProduct.tariffs.length > 1) {
@@ -548,6 +667,86 @@ const Dashboard: React.FC = () => {
   };
 
   // Función para completar el traslado de cuenta
+  const handleNavigateToConfiguration = () => {
+    console.log('Navegando a configuración:', { 
+      editOrderId, 
+      currentOrderLength: currentOrder.length,
+      selectedTable,
+      isTicketWithoutTable 
+    });
+    
+    // Caso especial: Ticket sin mesa con productos
+    if (isTicketWithoutTable && currentOrder.length > 0) {
+      console.log('Mostrando modal de cobro para ticket sin mesa');
+      // Mostrar modal de confirmación para cobrar o cancelar
+      setConfirmationData({
+        title: 'Ticket sin mesa pendiente',
+        message: 'Tienes un ticket sin mesa con productos. ¿Deseas cobrar el ticket actual antes de entrar en configuración?',
+        type: 'warning',
+        onConfirm: () => {
+          // Abrir modal de cobro
+          setIsPaymentModalOpen(true);
+        }
+      });
+      setShowConfirmationModal(true);
+      return;
+    }
+    
+    // Verificar si hay cambios pendientes reales
+    let hasPendingChanges = false;
+    
+    if (editOrderId && currentOrder.length > 0) {
+      // Para tickets editados, siempre hay cambios si hay pedido
+      hasPendingChanges = true;
+    } else if (selectedTable && currentOrder.length > 0) {
+      // Para mesas, verificar si el pedido actual es diferente al original
+      const originalOrder = getTableOrderItems(selectedTable.id);
+      hasPendingChanges = JSON.stringify(currentOrder) !== JSON.stringify(originalOrder);
+    }
+    
+    console.log('¿Hay cambios pendientes?', hasPendingChanges);
+    
+    if (hasPendingChanges) {
+      console.log('Mostrando modal de cambios pendientes');
+      // Mostrar modal de cambios pendientes
+      setShowPendingChangesModal(true);
+      return;
+    }
+    
+    console.log('Navegando directamente a configuración');
+    // Si no hay cambios pendientes, navegar directamente
+    navigate('/configuration');
+  };
+
+  const handleSaveAndNavigate = async () => {
+    try {
+      if (editOrderId) {
+        // Para tickets editados
+        await saveEditedOrder();
+      } else if (selectedTable) {
+        // Para mesas normales, actualizar el pedido de la mesa
+        const { subtotal, tax, total } = calculateTotal();
+        
+        // Actualizar el pedido en la mesa
+        addOrderToTable(selectedTable.id, total, currentOrder, selectedCustomer, true);
+        
+        toast.success('Cambios guardados en la mesa');
+      }
+      // Nota: Los tickets sin mesa se manejan con el modal de cobro
+      
+      navigate('/configuration');
+    } catch (error) {
+      console.error('Error guardando cambios:', error);
+      toast.error('Error al guardar los cambios');
+    }
+  };
+
+  const handleDiscardAndNavigate = () => {
+    // Limpiar el estado de edición y navegar
+    clearEditingState();
+    navigate('/configuration');
+  };
+
   const handleTransferAccountComplete = (sourceTable: TableData, customer: Customer) => {
     console.log('Iniciando traslado de cuenta:', { sourceTable, customer });
     try {
@@ -896,9 +1095,9 @@ const Dashboard: React.FC = () => {
   const { subtotal, tax, total } = calculateTotal();
 
   return (
-    <div className="h-full flex bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
-      {/* Panel izquierdo - Categorías y Productos (50%) */}
-      <div className="w-1/2 flex flex-col overflow-hidden bg-white/90 backdrop-blur-sm border-r border-gray-200/50 shadow-xl">
+    <div className="h-full flex flex-col lg:flex-row bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
+      {/* Panel izquierdo - Categorías y Productos */}
+      <div className="w-full lg:w-1/2 flex flex-col overflow-hidden bg-white/90 backdrop-blur-sm lg:border-r border-gray-200/50 shadow-xl">
         {/* Header con búsqueda */}
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200/50 p-4 shadow-sm">
           <div className="space-y-3">
@@ -973,7 +1172,7 @@ const Dashboard: React.FC = () => {
               </div>
             </div>
           )}
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {filteredProducts.map((product) => (
               <div
                 key={product.id}
@@ -1017,22 +1216,22 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Panel derecho - Líneas de pedido y botones (50%) */}
-      <div className="w-1/2 flex bg-white/90 backdrop-blur-sm border-l border-gray-200/50 shadow-xl">
-        {/* Panel de líneas de pedido (60%) */}
-        <div className="w-[60%] flex flex-col border-r border-gray-200/50">
+      {/* Panel derecho - Líneas de pedido y botones */}
+      <div className="w-full lg:w-1/2 flex flex-col lg:flex-row bg-white/90 backdrop-blur-sm lg:border-l border-gray-200/50 shadow-xl">
+        {/* Panel de líneas de pedido */}
+        <div className="w-full lg:w-[60%] flex flex-col lg:border-r border-gray-200/50">
           {/* Header del carrito */}
           <div className="p-4 border-b border-gray-200/50 bg-gradient-to-r from-blue-50 to-indigo-50">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-gray-900">Líneas de Pedido</h2>
-              <div className="flex items-center space-x-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <h2 className="text-lg lg:text-xl font-bold text-gray-900">Líneas de Pedido</h2>
+              <div className="flex items-center space-x-2 flex-wrap">
                 {selectedTable && (
-                  <div className="flex items-center space-x-2 bg-white px-3 py-2 rounded-lg shadow-sm border border-gray-200">
-                    <MapPin className="w-4 h-4 text-blue-500" />
-                    <span className="text-sm font-medium text-gray-700">
+                  <div className="flex items-center space-x-2 bg-white px-2 lg:px-3 py-2 rounded-lg shadow-sm border border-gray-200">
+                    <MapPin className="w-3 h-3 lg:w-4 lg:h-4 text-blue-500" />
+                    <span className="text-xs lg:text-sm font-medium text-gray-700 truncate">
                       Mesa {selectedTable.number}{selectedTable.name ? ` - ${selectedTable.name}` : ''}
                     </span>
-                    <div className={`w-3 h-3 rounded-full ${
+                    <div className={`w-2 h-2 lg:w-3 lg:h-3 rounded-full flex-shrink-0 ${
                       selectedTable.status === 'available' ? 'bg-green-500' :
                       selectedTable.status === 'occupied' ? 'bg-red-500' :
                       selectedTable.status === 'reserved' ? 'bg-yellow-500' :
@@ -1041,9 +1240,9 @@ const Dashboard: React.FC = () => {
                   </div>
                 )}
                 {isTicketWithoutTable && (
-                  <div className="flex items-center space-x-2 bg-blue-100 px-3 py-2 rounded-lg shadow-sm border border-blue-200">
-                    <Receipt className="w-4 h-4 text-blue-600" />
-                    <span className="text-sm font-medium text-blue-700">Ticket sin mesa</span>
+                  <div className="flex items-center space-x-2 bg-blue-100 px-2 lg:px-3 py-2 rounded-lg shadow-sm border border-blue-200">
+                    <Receipt className="w-3 h-3 lg:w-4 lg:h-4 text-blue-600" />
+                    <span className="text-xs lg:text-sm font-medium text-blue-700">Ticket sin mesa</span>
                   </div>
                 )}
               </div>
@@ -1062,7 +1261,8 @@ const Dashboard: React.FC = () => {
               <div className="space-y-3">
                 {currentOrder.map((item) => (
                   <div key={item.productId} className="bg-gradient-to-r from-white to-gray-50 rounded-lg p-3 border border-gray-200/50 shadow-sm hover:shadow-md transition-all duration-200">
-                    <div className="flex items-center gap-3">
+                    {/* Primera fila - Información principal */}
+                    <div className="flex items-center gap-2 mb-2">
                       {/* Botón eliminar */}
                       <button
                         onClick={() => removeFromOrder(item.productId)}
@@ -1073,14 +1273,25 @@ const Dashboard: React.FC = () => {
                       
                       {/* Nombre del producto */}
                       <div className="flex-1 min-w-0">
-                        <h4 className="font-semibold text-gray-900 text-base leading-tight">{item.productName}</h4>
+                        <h4 className="font-semibold text-gray-900 text-sm lg:text-base leading-tight truncate">{item.productName}</h4>
                       </div>
                       
-                      {/* Precio unitario */}
+                      {/* Total del item */}
                       <div className="flex-shrink-0">
+                        <span className="text-sm lg:text-base font-bold text-gray-900">
+                          {getCurrencySymbol()}{formatPrice(item.totalPrice)}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {/* Segunda fila - Controles y precio unitario */}
+                    <div className="flex items-center justify-between gap-2">
+                      {/* Lado izquierdo - Precio unitario y modificadores */}
+                      <div className="flex items-center gap-2 flex-1">
+                        {/* Precio unitario */}
                         <button
                           onClick={() => togglePriceEdit(item.productId)}
-                          className={`text-sm font-semibold hover:underline cursor-pointer flex items-center ${
+                          className={`text-xs lg:text-sm font-semibold hover:underline cursor-pointer flex items-center ${
                             item.unitPrice !== products.find(p => p.id === item.productId)?.price
                               ? 'text-blue-600'
                               : 'text-gray-700'
@@ -1090,29 +1301,29 @@ const Dashboard: React.FC = () => {
                           {getCurrencySymbol()}{formatPrice(item.unitPrice)} c/u
                           <DollarSign className="w-3 h-3 ml-1 opacity-50" />
                         </button>
-                      </div>
-                      
-                      {/* Botón modificadores */}
-                      <div className="flex-shrink-0">
-                        <button
-                          onClick={() => openModifiersForItem(item.productId)}
-                          className="text-xs text-gray-500 hover:text-blue-600 px-2 py-1 rounded hover:bg-blue-50 border border-gray-200"
-                          title="Añadir modificadores"
-                        >
-                          Mods
-                        </button>
-                        {item.unitPrice !== products.find(p => p.id === item.productId)?.price && (
+                        
+                        {/* Botón modificadores */}
+                        <div className="flex items-center gap-1">
                           <button
-                            onClick={() => resetToOriginalPrice(item.productId)}
-                            className="text-xs text-gray-400 hover:text-blue-600 p-1 rounded hover:bg-blue-50 ml-1"
-                            title="Restaurar precio original"
+                            onClick={() => openModifiersForItem(item.productId)}
+                            className="text-xs text-gray-500 hover:text-blue-600 px-2 py-1 rounded hover:bg-blue-50 border border-gray-200"
+                            title="Añadir modificadores"
                           >
-                            ↺
+                            Mods
                           </button>
-                        )}
+                          {item.unitPrice !== products.find(p => p.id === item.productId)?.price && (
+                            <button
+                              onClick={() => resetToOriginalPrice(item.productId)}
+                              className="text-xs text-gray-400 hover:text-blue-600 p-1 rounded hover:bg-blue-50"
+                              title="Restaurar precio original"
+                            >
+                              ↺
+                            </button>
+                          )}
+                        </div>
                       </div>
                       
-                      {/* Controles de cantidad */}
+                      {/* Lado derecho - Controles de cantidad */}
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <button
                           onClick={() => updateQuantity(item.productId, -1)}
@@ -1127,13 +1338,6 @@ const Dashboard: React.FC = () => {
                         >
                           <Plus className="w-3 h-3" />
                         </button>
-                      </div>
-                      
-                      {/* Total del item */}
-                      <div className="flex-shrink-0">
-                        <span className="text-base font-bold text-gray-900">
-                          {getCurrencySymbol()}{formatPrice(item.totalPrice)}
-                        </span>
                       </div>
                     </div>
                     
@@ -1200,20 +1404,20 @@ const Dashboard: React.FC = () => {
           )}
         </div>
 
-        {/* Panel de botones de acción (40%) */}
-        <div className="w-[40%] flex flex-col bg-gradient-to-r from-green-50 to-emerald-50">
+        {/* Panel de botones de acción */}
+        <div className="w-full lg:w-[40%] flex flex-col bg-gradient-to-r from-green-50 to-emerald-50">
           {/* Header de acciones */}
           <div className="p-4 border-b border-gray-200/50">
-            <h2 className="text-lg font-bold text-gray-900 mb-3">Acciones</h2>
+            <h2 className="text-base lg:text-lg font-bold text-gray-900 mb-3">Acciones</h2>
             
             {/* Botón para seleccionar cliente */}
             <button
               onClick={() => setShowCustomerSelectorModal(true)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-left flex items-center justify-between hover:bg-gray-50 transition-all duration-200 hover:shadow-md bg-white shadow-sm"
+              className="w-full px-3 lg:px-4 py-2 lg:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs lg:text-sm text-left flex items-center justify-between hover:bg-gray-50 transition-all duration-200 hover:shadow-md bg-white shadow-sm"
             >
-              <div className="flex items-center space-x-2">
-                <User className="w-4 h-4 text-blue-500" />
-                <span className={selectedCustomer ? 'text-gray-900' : 'text-gray-500'}>
+              <div className="flex items-center space-x-2 min-w-0 flex-1">
+                <User className="w-3 h-3 lg:w-4 lg:h-4 text-blue-500 flex-shrink-0" />
+                <span className={`truncate ${selectedCustomer ? 'text-gray-900' : 'text-gray-500'}`}>
                   {selectedCustomer 
                     ? `${selectedCustomer.name} ${selectedCustomer.lastName}` 
                     : 'Seleccionar cliente'
@@ -1221,7 +1425,7 @@ const Dashboard: React.FC = () => {
                 </span>
               </div>
               {selectedCustomer && (
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 flex-shrink-0">
                   <span className="text-xs text-green-600 font-medium">
                     {getCurrencySymbol()}{selectedCustomer.balance.toFixed(2)}
                   </span>
@@ -1245,7 +1449,7 @@ const Dashboard: React.FC = () => {
             {/* Botones del cliente */}
             {selectedCustomer && (
               <div className="space-y-2">
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2">
                   <button
                     onClick={handleTransferAccount}
                     className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white py-2 px-3 rounded-lg font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-lg hover:scale-105 text-xs"
@@ -1263,9 +1467,9 @@ const Dashboard: React.FC = () => {
                 onClick={() => setIsTableModalOpen(true)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs text-left flex items-center justify-between hover:bg-gray-50 transition-all duration-200 hover:shadow-md bg-white shadow-sm"
               >
-                <div className="flex items-center space-x-1">
-                  <MapPin className="w-3 h-3 text-blue-500" />
-                  <span className={selectedTable ? 'text-gray-900' : 'text-gray-500'}>
+                <div className="flex items-center space-x-1 min-w-0 flex-1">
+                  <MapPin className="w-3 h-3 text-blue-500 flex-shrink-0" />
+                  <span className={`truncate ${selectedTable ? 'text-gray-900' : 'text-gray-500'}`}>
                     {selectedTable 
                       ? `Mesa ${selectedTable.number}` 
                       : 'Seleccionar mesa'
@@ -1273,7 +1477,7 @@ const Dashboard: React.FC = () => {
                   </span>
                 </div>
                 {selectedTable && (
-                  <div className={`w-2 h-2 rounded-full ${
+                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
                     selectedTable.status === 'available' ? 'bg-green-500' :
                     selectedTable.status === 'occupied' ? 'bg-red-500' :
                     selectedTable.status === 'reserved' ? 'bg-yellow-500' :
@@ -1299,17 +1503,17 @@ const Dashboard: React.FC = () => {
             {/* Botones principales */}
             {editOrderId ? (
               <div className="space-y-2">
-                <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-2">
                   <button
                     onClick={saveEditedOrder}
-                    className="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white py-3 px-4 rounded-lg font-semibold flex items-center justify-center space-x-1 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 text-sm"
+                    className="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white py-3 px-4 rounded-lg font-semibold flex items-center justify-center space-x-1 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 text-sm"
                   >
                     <Receipt className="w-4 h-4" />
                     <span>Guardar</span>
                   </button>
                   <button
                     onClick={clearEditingState}
-                    className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center space-x-1 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 text-sm"
+                    className="w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center space-x-1 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 text-sm"
                   >
                     <X className="w-4 h-4" />
                     <span>Cancelar</span>
@@ -1320,13 +1524,13 @@ const Dashboard: React.FC = () => {
               <div className="space-y-2">
                 <button
                   onClick={processOrder}
-                  className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-2 px-3 rounded-lg font-semibold flex items-center justify-center space-x-1 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 text-xs"
+                  className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-3 px-4 rounded-lg font-semibold flex items-center justify-center space-x-1 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 text-sm"
                 >
-                  <Receipt className="w-3 h-3" />
+                  <Receipt className="w-4 h-4" />
                   <span>Procesar Pedido</span>
                 </button>
                 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2">
                   <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-2 rounded-lg font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-md text-xs">
                     <Calculator className="w-3 h-3" />
                     <span>Dividir</span>
@@ -1342,11 +1546,11 @@ const Dashboard: React.FC = () => {
                 
                 {/* Botones principales - Cobrar y Vaciar */}
                 {((selectedTable && selectedTable.status === 'occupied') || isTicketWithoutTable) && currentOrder.length > 0 ? (
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-2">
                     {/* Botón Cobrar - Destacado */}
                     <button
                       onClick={() => setIsPaymentModalOpen(true)}
-                      className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white py-3 px-4 rounded-lg font-bold flex items-center justify-center space-x-2 shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105 text-sm border-2 border-green-400 ring-2 ring-green-200 animate-pulse"
+                      className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white py-3 px-4 rounded-lg font-bold flex items-center justify-center space-x-2 shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105 text-sm border-2 border-green-400 ring-2 ring-green-200 animate-pulse"
                     >
                       <DollarSign className="w-4 h-4" />
                       <span>COBRAR</span>
@@ -1356,7 +1560,7 @@ const Dashboard: React.FC = () => {
                     {selectedTable && (
                       <button
                         onClick={clearTableCompleteOrder}
-                        className="bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white py-2 px-3 rounded-lg font-semibold flex items-center justify-center space-x-1 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 text-xs"
+                        className="w-full bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white py-2 px-3 rounded-lg font-semibold flex items-center justify-center space-x-1 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 text-xs"
                       >
                         <Trash2 className="w-3 h-3" />
                         <span>Vaciar</span>
@@ -1371,7 +1575,7 @@ const Dashboard: React.FC = () => {
           {/* Botón de configuración en la parte inferior */}
           <div className="border-t border-gray-200/50 p-4">
             <button
-              onClick={() => navigate('/configuration')}
+              onClick={handleNavigateToConfiguration}
               className="w-full bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white py-2 px-3 rounded-lg font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-lg hover:scale-105 text-xs"
             >
               <Settings className="w-3 h-3" />
@@ -1609,6 +1813,28 @@ const Dashboard: React.FC = () => {
              selectedCustomer={selectedCustomer}
            />
          )}
+
+         {/* Modal de precio específico */}
+         {showPriceInputModal && selectedProductForPrice && (
+           <PriceInputModal
+             isOpen={showPriceInputModal}
+             onClose={() => {
+               setShowPriceInputModal(false);
+               setSelectedProductForPrice(null);
+             }}
+             onConfirm={handlePriceInputConfirm}
+             productName={selectedProductForPrice.name}
+             currencySymbol={getCurrencySymbol()}
+           />
+         )}
+
+         {/* Modal de cambios pendientes */}
+         <PendingChangesModal
+           isOpen={showPendingChangesModal}
+           onClose={() => setShowPendingChangesModal(false)}
+           onSave={handleSaveAndNavigate}
+           onDiscard={handleDiscardAndNavigate}
+         />
       </div>
     );
   };

@@ -10,6 +10,7 @@ import { getNextReceiptId, formatReceiptId } from '../../utils/receiptIdGenerato
 import { useClosedTickets } from '../../contexts/ClosedTicketsContext';
 import IntegratedNumericKeypad from './IntegratedNumericKeypad';
 import ChangePopup from './ChangePopup';
+import PartialPaymentConfirmationModal from './PartialPaymentConfirmationModal';
 import { OrderItem } from '../../types/Ticket';
 
 interface PaymentModalProps {
@@ -74,6 +75,12 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const [remainingCardAmount, setRemainingCardAmount] = useState('');
   const [showChangePopup, setShowChangePopup] = useState(false);
   const [changeAmount, setChangeAmount] = useState(0);
+  const [showPartialPaymentModal, setShowPartialPaymentModal] = useState(false);
+  const [partialPaymentData, setPartialPaymentData] = useState<{
+    receivedAmount: number;
+    pendingAmount: number;
+    paymentMethod: 'cash' | 'card';
+  } | null>(null);
   
   const { getCurrencySymbol, config } = useConfig();
   const { refreshCustomers, updateCustomer } = useCustomers();
@@ -82,6 +89,60 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const currencySymbol = getCurrencySymbol();
   const isRefund = total < 0;
   const isAdjustment = originalTotal !== undefined;
+
+  // Función para manejar la confirmación del pago parcial
+  const handlePartialPaymentConfirm = async () => {
+    if (!partialPaymentData) return;
+    
+    const { receivedAmount, pendingAmount, paymentMethod } = partialPaymentData;
+    
+    const partialTaxBreakdown = calculateTaxBreakdown(effectiveOrderItems);
+    
+    // Generar ID del recibo parcial
+    const partialReceiptId = formatTicketId(getNextTicketId());
+    
+    const partialReceiptData = {
+      orderItems: effectiveOrderItems,
+      tableNumber: effectiveTableNumber,
+      customerName: effectiveCustomerName,
+      subtotal: effectiveSubtotal,
+      tax: effectiveTax,
+      total: receivedAmount,
+      paymentMethod: paymentMethod,
+      cashReceived: paymentMethod === 'cash' ? (cashReceived || receivedAmount.toString()) : undefined,
+      cardAmount: paymentMethod === 'card' ? (cardAmount || receivedAmount.toString()) : undefined,
+      mergedTableNumber: mergedTableNumber,
+      selectedCustomer: selectedCustomer,
+      restaurantName: config.businessData?.commercialName || 'Restaurante',
+      currencySymbol: getCurrencySymbol(),
+      documentType: 'partial_receipt' as const,
+      taxBreakdown: partialTaxBreakdown.length > 0 ? partialTaxBreakdown : undefined,
+      ticketId: partialReceiptId
+    };
+    
+    try {
+      await generatePOSTicketPDF({
+        ...partialReceiptData,
+        businessData: config.businessData
+      });
+      console.log('Recibo parcial generado');
+      
+      onPartialPayment(receivedAmount, paymentMethod);
+      
+      setShowPartialPaymentModal(false);
+      setPartialPaymentData(null);
+      onClose();
+    } catch (error) {
+      console.error('Error generando recibo parcial:', error);
+      setShowPartialPaymentModal(false);
+      setPartialPaymentData(null);
+    }
+  };
+
+  const handlePartialPaymentCancel = () => {
+    setShowPartialPaymentModal(false);
+    setPartialPaymentData(null);
+  };
 
   // Lógica para saldo del cliente
   const customerBalance = selectedCustomer?.balance || 0;
@@ -185,51 +246,15 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     
     if (isPartialPayment) {
       const pendingAmount = actualPendingAmount - receivedAmount;
-      const confirmMessage = `¿Confirmar cobro parcial?\n\nMesa: ${tableNumber}\nMonto cobrado: ${currencySymbol}${receivedAmount.toFixed(2)}\nMonto pendiente: ${currencySymbol}${pendingAmount.toFixed(2)}\n\nLa cuenta quedará abierta con ${currencySymbol}${pendingAmount.toFixed(2)} pendientes por pagar.`;
       
-      if (!confirm(confirmMessage)) {
-        return;
-      }
-      
-      const partialTaxBreakdown = calculateTaxBreakdown(effectiveOrderItems);
-      
-      // Generar ID del recibo parcial
-      const partialReceiptId = formatTicketId(getNextTicketId());
-      
-      const partialReceiptData = {
-        orderItems: effectiveOrderItems,
-        tableNumber: effectiveTableNumber,
-        customerName: effectiveCustomerName,
-        subtotal: effectiveSubtotal,
-        tax: effectiveTax,
-        total: receivedAmount,
-        paymentMethod: paymentMethod === 'balance' ? 'cash' : paymentMethod as 'cash' | 'card',
-        cashReceived: paymentMethod === 'cash' ? (cashReceived || receivedAmount.toString()) : undefined,
-        cardAmount: paymentMethod === 'card' ? (cardAmount || receivedAmount.toString()) : undefined,
-        mergedTableNumber: mergedTableNumber,
-        selectedCustomer: selectedCustomer,
-        restaurantName: config.businessData?.commercialName || 'Restaurante',
-        currencySymbol: getCurrencySymbol(),
-        documentType: 'partial_receipt' as const,
-        taxBreakdown: partialTaxBreakdown.length > 0 ? partialTaxBreakdown : undefined,
-        ticketId: partialReceiptId
-      };
-      
-      try {
-        await generatePOSTicketPDF({
-          ...partialReceiptData,
-          businessData: config.businessData
-        });
-        console.log('Recibo parcial generado');
-        
-        onPartialPayment(receivedAmount, paymentMethod === 'balance' ? 'cash' : paymentMethod as 'cash' | 'card');
-        
-        onClose();
-        return;
-      } catch (error) {
-        console.error('Error generando recibo parcial:', error);
-        return;
-      }
+      // Mostrar modal de confirmación personalizado
+      setPartialPaymentData({
+        receivedAmount,
+        pendingAmount,
+        paymentMethod: paymentMethod === 'balance' ? 'cash' : paymentMethod as 'cash' | 'card'
+      });
+      setShowPartialPaymentModal(true);
+      return;
     }
     
     // Mostrar popup de cambio si es pago en efectivo y hay cambio
@@ -426,12 +451,12 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         />
 
         {/* Modal */}
-        <div className="inline-block w-full max-w-6xl my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-xl rounded-lg">
+        <div className="inline-block w-full max-w-xl lg:max-w-3xl my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-xl rounded-lg">
           {/* Header */}
-          <div className={`flex items-center justify-between p-6 border-b ${isRefund ? 'border-red-200 bg-red-50' : 'border-gray-200'}`}>
-            <div className="flex items-center space-x-3">
-              <Receipt className={`w-6 h-6 ${isRefund ? 'text-red-600' : 'text-primary-600'}`} />
-              <h2 className={`text-xl font-semibold ${isRefund ? 'text-red-700' : 'text-gray-900'}`}>
+          <div className={`flex items-center justify-between p-4 lg:p-6 border-b ${isRefund ? 'border-red-200 bg-red-50' : 'border-gray-200'}`}>
+            <div className="flex items-center space-x-2 lg:space-x-3">
+              <Receipt className={`w-5 h-5 lg:w-6 lg:h-6 ${isRefund ? 'text-red-600' : 'text-primary-600'}`} />
+              <h2 className={`text-lg lg:text-xl font-semibold ${isRefund ? 'text-red-700' : 'text-gray-900'}`}>
                 {isRefund ? '⚠️ DEVOLUCIÓN' : (isAdjustment ? 'Cobro de Diferencia' : (titleOverride || `Cobro - Mesa ${tableNumber}`))}
               </h2>
             </div>
@@ -439,19 +464,19 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               onClick={onClose}
               className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4 lg:w-5 lg:h-5" />
             </button>
           </div>
 
           {/* Contenido */}
-          <div className="p-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="p-1 lg:p-3">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-1 lg:gap-3">
               {/* Columna izquierda - Resumen y configuración */}
-              <div className="space-y-6">
+              <div className="space-y-4 lg:space-y-6">
                 {/* Resumen del pedido */}
                 <div>
-                  <h3 className="text-lg font-semibold mb-3">Resumen del Pedido</h3>
-                  <div className="bg-gray-50 rounded-lg p-4 max-h-64 overflow-y-auto">
+                  <h3 className="text-base lg:text-lg font-semibold mb-2 lg:mb-3">Resumen del Pedido</h3>
+                  <div className="bg-gray-50 rounded-lg p-3 lg:p-4 max-h-48 lg:max-h-64 overflow-y-auto">
                     {orderItems.map((item, index) => {
                       const isNegativeItem = item.productName.includes('(-)');
                       return (
@@ -575,31 +600,31 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                 {/* Método de pago */}
                 {(!useBalance || remainingAmount > 0) && (
                   <div>
-                    <h3 className="text-lg font-semibold mb-3">
+                    <h3 className="text-base lg:text-lg font-semibold mb-2 lg:mb-3">
                       {useBalance ? 'Método para el Resto' : 'Método de Pago'}
                     </h3>
-                    <div className="flex space-x-4">
+                    <div className="flex space-x-2 lg:space-x-4">
                       <button
                         onClick={() => useBalance ? setRemainingPaymentMethod('cash') : setPaymentMethod('cash')}
-                        className={`flex-1 flex items-center justify-center space-x-2 p-3 rounded-lg border-2 transition-colors ${
+                        className={`flex-1 flex items-center justify-center space-x-1 lg:space-x-2 p-2 lg:p-3 rounded-lg border-2 transition-colors ${
                           (useBalance ? remainingPaymentMethod : paymentMethod) === 'cash'
                             ? 'border-primary-500 bg-primary-50 text-primary-700'
                             : 'border-gray-300 hover:border-gray-400'
                         }`}
                       >
-                        <DollarSign className="w-5 h-5" />
-                        <span>Efectivo</span>
+                        <DollarSign className="w-4 h-4 lg:w-5 lg:h-5" />
+                        <span className="text-sm lg:text-base">Efectivo</span>
                       </button>
                       <button
                         onClick={() => useBalance ? setRemainingPaymentMethod('card') : setPaymentMethod('card')}
-                        className={`flex-1 flex items-center justify-center space-x-2 p-3 rounded-lg border-2 transition-colors ${
+                        className={`flex-1 flex items-center justify-center space-x-1 lg:space-x-2 p-2 lg:p-3 rounded-lg border-2 transition-colors ${
                           (useBalance ? remainingPaymentMethod : paymentMethod) === 'card'
                             ? 'border-primary-500 bg-primary-50 text-primary-700'
                             : 'border-gray-300 hover:border-gray-400'
                         }`}
                       >
-                        <CreditCard className="w-5 h-5" />
-                        <span>Tarjeta</span>
+                        <CreditCard className="w-4 h-4 lg:w-5 lg:h-5" />
+                        <span className="text-sm lg:text-base">Tarjeta</span>
                       </button>
                     </div>
                   </div>
@@ -615,7 +640,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                       (useBalance && remainingAmount > 0 && remainingPaymentMethod === 'cash' && !remainingCashReceived) ||
                       (useBalance && remainingAmount > 0 && remainingPaymentMethod === 'card' && !remainingCardAmount)
                     }
-                    className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white py-4 px-6 rounded-lg flex items-center justify-center space-x-2 font-semibold text-lg transition-colors disabled:cursor-not-allowed"
+                    className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white py-3 lg:py-4 px-4 lg:px-6 rounded-lg flex items-center justify-center space-x-2 font-semibold text-base lg:text-lg transition-colors disabled:cursor-not-allowed"
                   >
                     {useBalance ? (
                       <>
@@ -633,11 +658,11 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               </div>
 
               {/* Columna derecha - Teclado numérico */}
-              <div className="space-y-6">
+              <div className="space-y-1 lg:space-y-2">
                 {/* Teclado numérico para efectivo */}
                 {((!useBalance && paymentMethod === 'cash') || (useBalance && remainingPaymentMethod === 'cash' && remainingAmount > 0)) && (
                   <div>
-                    <h3 className="text-lg font-semibold mb-3">
+                    <h3 className="text-xs font-semibold mb-0.5">
                       {useBalance ? 'Cantidad Recibida (Resto)' : 'Cantidad Recibida'}
                     </h3>
                     <IntegratedNumericKeypad
@@ -647,12 +672,10 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                       placeholder="0.00"
                     />
                     {parseFloat(useBalance ? remainingCashReceived : cashReceived) > 0 && (
-                      <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-                        <div className="text-center">
-                          <div className="text-sm text-gray-600 mb-1">Cambio a devolver:</div>
-                          <div className="text-2xl font-bold text-green-600">
-                            {currencySymbol}{(useBalance ? remainingChange : change).toFixed(2)}
-                          </div>
+                      <div className="mt-0.5 p-0.5 bg-blue-50 rounded text-center">
+                        <div className="text-xs text-gray-600">Cambio:</div>
+                        <div className="text-xs font-bold text-green-600">
+                          {currencySymbol}{(useBalance ? remainingChange : change).toFixed(2)}
                         </div>
                       </div>
                     )}
@@ -662,7 +685,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                 {/* Teclado numérico para tarjeta */}
                 {((!useBalance && paymentMethod === 'card') || (useBalance && remainingPaymentMethod === 'card' && remainingAmount > 0)) && (
                   <div>
-                    <h3 className="text-lg font-semibold mb-3">
+                    <h3 className="text-xs font-semibold mb-0.5">
                       {useBalance ? 'Cantidad a Cobrar (Resto)' : 'Cantidad a Cobrar'}
                     </h3>
                     <IntegratedNumericKeypad
@@ -672,12 +695,10 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                       placeholder="0.00"
                     />
                     {parseFloat(useBalance ? remainingCardAmount : cardAmount) > 0 && (
-                      <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-                        <div className="text-center">
-                          <div className="text-sm text-gray-600 mb-1">Diferencia:</div>
-                          <div className="text-2xl font-bold text-blue-600">
-                            {currencySymbol}{(useBalance ? remainingCardChange : cardChange).toFixed(2)}
-                          </div>
+                      <div className="mt-0.5 p-0.5 bg-blue-50 rounded text-center">
+                        <div className="text-xs text-gray-600">Diferencia:</div>
+                        <div className="text-xs font-bold text-blue-600">
+                          {currencySymbol}{(useBalance ? remainingCardChange : cardChange).toFixed(2)}
                         </div>
                       </div>
                     )}
@@ -694,6 +715,17 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         isOpen={showChangePopup}
         onClose={() => setShowChangePopup(false)}
         changeAmount={changeAmount}
+        currencySymbol={currencySymbol}
+      />
+
+      {/* Modal de confirmación de pago parcial */}
+      <PartialPaymentConfirmationModal
+        isOpen={showPartialPaymentModal}
+        onConfirm={handlePartialPaymentConfirm}
+        onCancel={handlePartialPaymentCancel}
+        tableNumber={tableNumber}
+        amountCollected={partialPaymentData?.receivedAmount || 0}
+        pendingAmount={partialPaymentData?.pendingAmount || 0}
         currencySymbol={currencySymbol}
       />
     </div>

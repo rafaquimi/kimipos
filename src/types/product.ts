@@ -25,6 +25,7 @@ export interface Product {
   tariffs?: ProductTariff[]; // Array de tarifas disponibles (opcional para compatibilidad)
   combinations?: ProductCombination[]; // Combinaciones disponibles (opcional para compatibilidad)
   isActive: boolean;
+  askForPrice?: boolean; // Si es true, pedir precio al usuario en el dashboard
   createdAt: Date;
   updatedAt: Date;
 }
