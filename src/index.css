@@ -87,6 +87,19 @@
   }
 }
 
+/* Estilos para tickets de impresión */
+@media print {
+  .item.cancelled {
+    color: #dc2626 !important;
+    text-decoration: line-through !important;
+    font-weight: bold !important;
+  }
+  
+  .item.cancelled::before {
+    content: "❌ ";
+  }
+}
+
 /* Scrollbars personalizados */
 ::-webkit-scrollbar {
   width: 6px;

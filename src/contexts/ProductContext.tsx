@@ -1399,20 +1399,30 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const getProductPrinter = (productId: string): string | undefined => {
+    console.log(`🔍 getProductPrinter - Buscando impresora para producto ID: ${productId}`);
+    
     const product = getProductById(productId);
-    if (!product) return undefined;
+    if (!product) {
+      console.log(`  - Producto no encontrado con ID: ${productId}`);
+      return undefined;
+    }
+    
+    console.log(`  - Producto encontrado: ${product.name}`);
     
     // Si el producto tiene configuración específica, usarla
     if (product.printerName) {
+      console.log(`  - Usando impresora específica del producto: ${product.printerName}`);
       return product.printerName;
     }
     
     // Si no, usar la configuración de la categoría
     const category = getCategoryById(product.categoryId);
     if (category && category.printerName) {
+      console.log(`  - Usando impresora de la categoría: ${category.printerName}`);
       return category.printerName;
     }
     
+    console.log(`  - Sin impresora configurada para: ${product.name}`);
     return undefined; // Sin impresora configurada
   };
 

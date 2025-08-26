@@ -31,13 +31,18 @@ export const groupItemsByPrinter = (
 ): Map<string, OrderItem[]> => {
   const printerGroups = new Map<string, OrderItem[]>();
 
+  console.log('🔍 groupItemsByPrinter - Analizando productos:');
   orderItems.forEach(item => {
     // Extraer el productId del item
     const productId = item.productId?.toString() || '';
     
+    console.log(`  - Producto: ${item.productName} (ID: ${productId})`);
+    
     if (productId) {
       // Obtener la impresora configurada para este producto
       const printerName = getProductPrinter(productId);
+      
+      console.log(`    - Impresora configurada: ${printerName || 'Sin configurar'}`);
       
       if (printerName) {
         // Si tiene impresora configurada, agrupar por impresora
@@ -45,6 +50,7 @@ export const groupItemsByPrinter = (
           printerGroups.set(printerName, []);
         }
         printerGroups.get(printerName)!.push(item);
+        console.log(`    - Agregado al grupo: ${printerName}`);
       } else {
         // Si no tiene impresora configurada, usar "Sin Impresora"
         const defaultGroup = 'Sin Impresora';
@@ -52,6 +58,7 @@ export const groupItemsByPrinter = (
           printerGroups.set(defaultGroup, []);
         }
         printerGroups.get(defaultGroup)!.push(item);
+        console.log(`    - Agregado al grupo: ${defaultGroup}`);
       }
     } else {
       // Si no hay productId, ir al grupo "Sin Impresora"
@@ -60,10 +67,108 @@ export const groupItemsByPrinter = (
         printerGroups.set(defaultGroup, []);
       }
       printerGroups.get(defaultGroup)!.push(item);
+      console.log(`    - Sin productId, agregado al grupo: ${defaultGroup}`);
     }
   });
 
+  console.log('📋 Grupos finales:');
+  printerGroups.forEach((items, printer) => {
+    console.log(`  - ${printer}: ${items.length} productos`);
+  });
+
   return printerGroups;
+};
+
+/**
+ * Genera un ticket de comanda para cocina
+ */
+export const generateKitchenTicket = (
+  items: OrderItem[],
+  tableNumber: string,
+  customerName?: string,
+  config?: any,
+  printerName?: string
+): string => {
+  const restaurantName = config?.businessData?.commercialName || 'Restaurante';
+  const timestamp = new Date().toLocaleString('es-ES', {
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+  
+  const ticketContent = `
+<div class="header">
+  ${restaurantName.toUpperCase()}
+</div>
+<div class="header">
+  COMANDA DE COCINA
+</div>
+
+MESA: ${tableNumber}
+${customerName ? `CLIENTE: ${customerName.toUpperCase()}` : ''}
+HORA: ${timestamp}
+
+<div class="header">PEDIDO</div>
+${items.map(item => `
+<div class="item">
+  ${item.quantity}x ${item.productName.toUpperCase()}
+</div>
+`).join('')}
+
+<div class="footer">
+  ${timestamp}
+</div>
+  `;
+  
+  return ticketContent;
+};
+
+/**
+ * Genera un ticket de cancelación para cocina
+ */
+export const generateCancellationTicket = (
+  items: OrderItem[],
+  tableNumber: string,
+  customerName?: string,
+  config?: any,
+  printerName?: string
+): string => {
+  const restaurantName = config?.businessData?.commercialName || 'Restaurante';
+  const timestamp = new Date().toLocaleString('es-ES', {
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+  
+  const ticketContent = `
+<div class="header">
+  ${restaurantName.toUpperCase()}
+</div>
+<div class="header">
+  CANCELACIÓN DE COMANDA
+</div>
+
+MESA: ${tableNumber}
+${customerName ? `CLIENTE: ${customerName.toUpperCase()}` : ''}
+HORA: ${timestamp}
+
+<div class="header">PRODUCTOS A CANCELAR</div>
+${items.map(item => `
+<div class="item cancelled">
+  ${item.quantity}x ${item.productName.toUpperCase()}
+</div>
+`).join('')}
+
+<div class="footer">
+  ${timestamp}
+</div>
+  `;
+  
+  return ticketContent;
 };
 
 /**
@@ -160,6 +265,93 @@ const printToPrinter = async (content: string, printerName?: string, type: strin
 };
 
 /**
+ * Función para procesar la impresión de cancelaciones
+ */
+export const processCancellationPrinting = async (
+  orderItems: OrderItem[],
+  tableNumber: string,
+  customerName?: string,
+  getProductPrinter?: (productId: string) => string | undefined,
+  config?: any
+): Promise<void> => {
+  try {
+    if (!getProductPrinter) {
+      console.warn('Función de configuración de impresora no disponible');
+      return;
+    }
+
+    // Agrupar productos por impresora
+    const printerGroups = groupItemsByPrinter(orderItems, getProductPrinter);
+
+    console.log('📋 Grupos de cancelación:', printerGroups.size);
+    printerGroups.forEach((items, printer) => {
+      console.log(`   - ${printer}: ${items.length} productos`);
+    });
+
+    let hasPrintingErrors = false;
+    let printedCount = 0;
+    let totalPrintJobs = 0;
+
+    // Contar trabajos de impresión totales
+    for (const [printerName, items] of printerGroups) {
+      if (items.length > 0 && printerName !== 'Sin Impresora') {
+        totalPrintJobs++;
+      }
+    }
+
+    // Imprimir cada grupo en su impresora correspondiente
+    for (const [printerName, items] of printerGroups) {
+      if (items.length === 0) continue;
+
+      const ticketContent = generateCancellationTicket(items, tableNumber, customerName, config, printerName);
+      console.log(`🖨️ Imprimiendo cancelación en ${printerName}:`, ticketContent);
+      
+      try {
+        const toastId = `cancel-${printerName}`;
+        toast.loading(`Imprimiendo cancelación en ${printerName} (${items.length} productos)...`, { id: toastId });
+        
+        // Solo imprimir si tiene una impresora configurada
+        if (printerName !== 'Sin Impresora') {
+          // Esperar a que termine completamente esta impresión
+          await printToPrinter(ticketContent, printerName, `Cancelación ${printerName}`);
+          
+          // Esperar un poco más para asegurar que la impresión se complete
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          toast.success(`Cancelación impresa correctamente en ${printerName}`, { id: toastId });
+          console.log(`✅ Cancelación impresa correctamente en ${printerName}`);
+          printedCount++;
+        } else {
+          toast.error(`Sin impresora configurada para ${items.length} productos`, { id: toastId });
+          console.warn(`⚠️ Sin impresora configurada para ${items.length} productos`);
+        }
+      } catch (error) {
+        const toastId = `cancel-${printerName}`;
+        toast.error(`Error imprimiendo cancelación en ${printerName}`, { id: toastId });
+        console.error(`❌ Error imprimiendo cancelación en ${printerName}:`, error);
+        hasPrintingErrors = true;
+      }
+    }
+
+    // Mostrar resumen final
+    console.log('✅ Impresión de cancelación procesada correctamente');
+    console.log(`📊 Resumen: ${printedCount}/${totalPrintJobs} impresiones exitosas`);
+    printerGroups.forEach((items, printer) => {
+      console.log(`   - ${printer}: ${items.length} productos`);
+    });
+
+    // Si hubo errores, lanzar una excepción para que el Dashboard lo maneje
+    if (hasPrintingErrors) {
+      throw new Error('Algunas cancelaciones fallaron');
+    }
+
+  } catch (error) {
+    console.error('❌ Error procesando cancelación:', error);
+    throw error; // Re-lanzar el error para que el Dashboard lo maneje
+  }
+};
+
+/**
  * Función principal para procesar la impresión de un pedido
  */
 export const processOrderPrinting = async (
@@ -198,23 +390,23 @@ export const processOrderPrinting = async (
     for (const [printerName, items] of printerGroups) {
       if (items.length === 0) continue;
 
-      const ticketContent = generateTicketForPrinter(items, tableNumber, customerName, config, printerName);
-      console.log(`🖨️ Imprimiendo en ${printerName}:`, ticketContent);
+      const ticketContent = generateKitchenTicket(items, tableNumber, customerName, config, printerName);
+      console.log(`🖨️ Imprimiendo comanda en ${printerName}:`, ticketContent);
       
       try {
         const toastId = `printer-${printerName}`;
-        toast.loading(`Imprimiendo en ${printerName} (${items.length} productos)...`, { id: toastId });
+        toast.loading(`Imprimiendo comanda en ${printerName} (${items.length} productos)...`, { id: toastId });
         
         // Solo imprimir si tiene una impresora configurada
         if (printerName !== 'Sin Impresora') {
           // Esperar a que termine completamente esta impresión
-          await printToPrinter(ticketContent, printerName, `Ticket ${printerName}`);
+          await printToPrinter(ticketContent, printerName, `Comanda ${printerName}`);
           
           // Esperar un poco más para asegurar que la impresión se complete
           await new Promise(resolve => setTimeout(resolve, 1000));
           
-          toast.success(`Impreso correctamente en ${printerName}`, { id: toastId });
-          console.log(`✅ Impreso correctamente en ${printerName}`);
+          toast.success(`Comanda impresa correctamente en ${printerName}`, { id: toastId });
+          console.log(`✅ Comanda impresa correctamente en ${printerName}`);
           printedCount++;
         } else {
           toast.error(`Sin impresora configurada para ${items.length} productos`, { id: toastId });

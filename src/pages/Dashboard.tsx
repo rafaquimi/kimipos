@@ -41,7 +41,7 @@ import { calculateTotalBase, calculateTotalVAT, calculateTotalWithVAT, formatPri
 import { ProductTariff } from '../types/product';
 import { db } from '../database/db';
 import { generatePOSTicketPDF } from '../utils/pdfGenerator';
-import { processOrderPrinting } from '../utils/printingService';
+import { processOrderPrinting, processCancellationPrinting } from '../utils/printingService';
 import { useNavigate } from 'react-router-dom';
 
 interface OrderItem {
@@ -105,10 +105,12 @@ const Dashboard: React.FC = () => {
   const [customerForRecharge, setCustomerForRecharge] = useState<Customer | null>(null);
   // Modal de selección de clientes
   const [showCustomerSelectorModal, setShowCustomerSelectorModal] = useState(false);
-  // Edición de tickets (desde Pedidos)
+    // Edición de tickets (desde Pedidos)
   const [editOrderId, setEditOrderId] = useState<number | null>(null);
   const [originalTotalForEdit, setOriginalTotalForEdit] = useState<number | null>(null);
-  const [tempDiffForPayment, setTempDiffForPayment] = useState<{ 
+  const [originalOrderItems, setOriginalOrderItems] = useState<OrderItem[]>([]);
+  
+  const [tempDiffForPayment, setTempDiffForPayment] = useState<{  
     amount: number; 
     isIncrease: boolean; 
     newTotal?: number; 
@@ -253,8 +255,13 @@ const Dashboard: React.FC = () => {
             };
           });
           setCurrentOrder(items);
+          setOriginalOrderItems([...items]); // Guardar copia de los productos originales
           setEditOrderId(order.id || null);
           setOriginalTotalForEdit(order.total || 0);
+          
+          console.log('🔍 Pedido cargado para edición:');
+          console.log('  - editOrderId:', order.id);
+          console.log('  - productos originales:', items.map(p => `${p.quantity}x ${p.productName}`));
           toast.success(`Editando ticket #${order.id}`);
           // No abrir modal de mesas cuando se está editando
           setIsTableModalOpen(false);
@@ -270,8 +277,101 @@ const Dashboard: React.FC = () => {
 
 
 
+
+
+  // Función para identificar productos nuevos y eliminados
+  const getNewProducts = (): OrderItem[] => {
+    console.log('🔍 getNewProducts() ejecutándose:');
+    console.log('  - originalOrderItems:', originalOrderItems.map(p => `${p.quantity}x ${p.productName}`));
+    console.log('  - currentOrder:', currentOrder.map(p => `${p.quantity}x ${p.productName}`));
+    
+    if (originalOrderItems.length === 0) {
+      // Si no hay productos originales, todos son nuevos
+      console.log('  - No hay productos originales, todos son nuevos');
+      return currentOrder;
+    }
+    
+    // Comparar productos actuales con originales
+    const newProducts: OrderItem[] = [];
+    
+    currentOrder.forEach(currentItem => {
+      // Buscar si este producto ya existía en los originales
+      const existingInOriginal = originalOrderItems.find(originalItem => 
+        originalItem.productName === currentItem.productName &&
+        originalItem.unitPrice === currentItem.unitPrice
+      );
+      
+      if (!existingInOriginal) {
+        // Es un producto nuevo
+        console.log(`  - Producto nuevo encontrado: ${currentItem.quantity}x ${currentItem.productName}`);
+        newProducts.push(currentItem);
+      } else {
+        // Verificar si la cantidad aumentó
+        const quantityDiff = currentItem.quantity - existingInOriginal.quantity;
+        if (quantityDiff > 0) {
+          // Crear un item solo con la cantidad nueva
+          console.log(`  - Cantidad aumentada: ${quantityDiff}x ${currentItem.productName}`);
+          newProducts.push({
+            ...currentItem,
+            quantity: quantityDiff,
+            totalPrice: quantityDiff * currentItem.unitPrice
+          });
+        } else {
+          console.log(`  - Producto sin cambios: ${currentItem.quantity}x ${currentItem.productName}`);
+        }
+      }
+    });
+    
+    console.log('  - Productos nuevos finales:', newProducts.map(p => `${p.quantity}x ${p.productName}`));
+    return newProducts;
+  };
+
+  // Función para identificar productos eliminados
+  const getCancelledProducts = (): OrderItem[] => {
+    console.log('🔍 getCancelledProducts() ejecutándose:');
+    
+    if (originalOrderItems.length === 0) {
+      return [];
+    }
+    
+    const cancelledProducts: OrderItem[] = [];
+    
+    originalOrderItems.forEach(originalItem => {
+      // Buscar si este producto original existe en los actuales
+      const existingInCurrent = currentOrder.find(currentItem => 
+        currentItem.productName === originalItem.productName &&
+        currentItem.unitPrice === originalItem.unitPrice
+      );
+      
+      if (!existingInCurrent) {
+        // El producto fue eliminado completamente
+        console.log(`  - Producto eliminado completamente: ${originalItem.quantity}x ${originalItem.productName}`);
+        cancelledProducts.push({
+          ...originalItem,
+          quantity: originalItem.quantity,
+          totalPrice: originalItem.quantity * originalItem.unitPrice
+        });
+      } else {
+        // Verificar si la cantidad disminuyó
+        const quantityDiff = originalItem.quantity - existingInCurrent.quantity;
+        if (quantityDiff > 0) {
+          // Crear un item solo con la cantidad eliminada
+          console.log(`  - Cantidad reducida: ${quantityDiff}x ${originalItem.productName}`);
+          cancelledProducts.push({
+            ...originalItem,
+            quantity: quantityDiff,
+            totalPrice: quantityDiff * originalItem.unitPrice
+          });
+        }
+      }
+    });
+    
+    console.log('  - Productos cancelados finales:', cancelledProducts.map(p => `${p.quantity}x ${p.productName}`));
+    return cancelledProducts;
+  };
+
   const clearEditingState = () => {
-    // Limpiar estados de edición
+    // Limpiar estados de edición de pedidos (desde "Pedidos")
     setEditOrderId(null);
     setOriginalTotalForEdit(null);
     setTempDiffForPayment(null);
@@ -295,19 +395,19 @@ const Dashboard: React.FC = () => {
   const saveEditedOrder = async () => {
     if (!editOrderId) return;
     
-    const { subtotal, tax, total } = calculateTotal();
+    const totals = calculateTotal();
     
     // Solo mostrar modal de cobro si hay diferencia, SIN guardar aún
     if (originalTotalForEdit !== null) {
-      const diff = parseFloat((total - originalTotalForEdit).toFixed(2));
+      const diff = parseFloat((totals.total - originalTotalForEdit).toFixed(2));
       if (Math.abs(diff) > 0.001) {
         // Preparar datos para el modal de cobro de diferencia
         setTempDiffForPayment({ 
           amount: Math.abs(diff), 
           isIncrease: diff > 0,
-          newTotal: total,
-          newSubtotal: subtotal,
-          newTax: tax
+          newTotal: totals.total,
+          newSubtotal: totals.subtotal,
+          newTax: totals.tax
         });
         setIsPaymentModalOpen(true);
         return; // No guardar hasta completar el cobro
@@ -325,9 +425,9 @@ const Dashboard: React.FC = () => {
           totalPrice: i.totalPrice,
           modifiers: i.modifiers || []
         })),
-        subtotal,
-        tax,
-        total,
+        subtotal: totals.subtotal,
+        tax: totals.tax,
+        total: totals.total,
         updatedAt: new Date()
       });
       
@@ -746,10 +846,10 @@ const Dashboard: React.FC = () => {
         await saveEditedOrder();
       } else if (selectedTable) {
         // Para mesas normales, actualizar el pedido de la mesa
-        const { subtotal, tax, total } = calculateTotal();
+        const totals = calculateTotal();
         
         // Actualizar el pedido en la mesa
-        addOrderToTable(selectedTable.id, total, currentOrder, selectedCustomer, true);
+        addOrderToTable(selectedTable.id, totals.total, currentOrder, selectedCustomer, true);
         
         toast.success('Cambios guardados en la mesa');
       }
@@ -938,6 +1038,14 @@ const Dashboard: React.FC = () => {
       if (existingOrderItems.length > 0) {
         setCurrentOrder(existingOrderItems);
         
+        // Configurar modo de mesa ocupada para impresión incremental (NO es edición de pedidos)
+        setOriginalOrderItems([...existingOrderItems]); // Guardar copia de productos originales
+        // NO establecer editOrderId aquí - solo para impresión incremental
+        setOriginalTotalForEdit(table.currentOrder?.total || 0);
+        
+        console.log('🔍 Mesa ocupada seleccionada - Configurando impresión incremental:');
+        console.log('  - productos originales:', existingOrderItems.map(p => `${p.quantity}x ${p.productName}`));
+        
         // Calcular el total pendiente considerando cobros parciales
         const totalPartialPayments = getTotalPartialPayments(table.id);
         // Usar el total de la mesa para consistencia con TableComponent
@@ -958,10 +1066,20 @@ const Dashboard: React.FC = () => {
       } else {
         // Mesa ocupada pero sin productos, limpiar carrito
         setCurrentOrder([]);
+        
+        // Limpiar modo de edición
+        setOriginalOrderItems([]);
+        setEditOrderId(null);
+        setOriginalTotalForEdit(0);
       }
     } else {
       // Si la mesa está disponible, limpiar el pedido actual
       setCurrentOrder([]);
+      
+      // Limpiar modo de edición
+      setOriginalOrderItems([]);
+      setEditOrderId(null);
+      setOriginalTotalForEdit(0);
     }
     
     // Cerrar el modal después de seleccionar una mesa
@@ -1031,47 +1149,92 @@ const Dashboard: React.FC = () => {
     // Usar replaceExisting: true para reemplazar completamente los productos existentes
     addOrderToTable(selectedTable.id, total, currentOrder, selectedCustomer, true);
     
-    // Procesar impresión según configuración de productos
+        // Procesar impresión según configuración de productos
     const tableNumber = selectedTable.id.startsWith('account-') 
       ? selectedTable.name 
       : `Mesa ${selectedTable.number}`;
     const customerName = selectedCustomer?.name;
     
-    // Mostrar toast de procesando impresión
-    const processingToast = toast.loading('Procesando impresión...', { duration: Infinity });
+    // Determinar qué productos imprimir (incremental si hay productos originales, todos si es nuevo)
+    console.log('🔍 Debug impresión incremental:');
+    console.log('  - editOrderId:', editOrderId);
+    console.log('  - originalOrderItems.length:', originalOrderItems.length);
+    console.log('  - currentOrder.length:', currentOrder.length);
     
-    try {
-      // Esperar a que termine completamente la impresión
-      await processOrderPrinting(
-        currentOrder,
-        tableNumber,
-        customerName,
-        getProductPrinter,
-        config
-      );
+    // Usar impresión incremental si hay productos originales (mesa ocupada) Y no estamos en modo edición de pedidos
+    const productsToPrint = (originalOrderItems.length > 0 && !editOrderId) ? getNewProducts() : currentOrder;
+    const productsToCancel = (originalOrderItems.length > 0 && !editOrderId) ? getCancelledProducts() : [];
+    
+    console.log('  - productsToPrint.length:', productsToPrint.length);
+    console.log('  - productsToPrint:', productsToPrint.map(p => `${p.quantity}x ${p.productName}`));
+    console.log('  - productsToCancel.length:', productsToCancel.length);
+    console.log('  - productsToCancel:', productsToCancel.map(p => `${p.quantity}x ${p.productName}`));
+    
+    // Solo imprimir si hay productos nuevos o cancelados
+    if (productsToPrint.length > 0 || productsToCancel.length > 0) {
+      // Mostrar toast de procesando impresión
+      const processingToast = toast.loading('Procesando impresión...', { duration: Infinity });
       
-      // Cerrar el toast de procesando
-      toast.dismiss(processingToast);
+      try {
+        // Imprimir productos nuevos (si los hay)
+        if (productsToPrint.length > 0) {
+          await processOrderPrinting(
+            productsToPrint,
+            tableNumber,
+            customerName,
+            getProductPrinter,
+            config
+          );
+        }
+        
+        // Imprimir productos cancelados (si los hay)
+        if (productsToCancel.length > 0) {
+          await processCancellationPrinting(
+            productsToCancel,
+            tableNumber,
+            customerName,
+            getProductPrinter,
+            config
+          );
+        }
       
-      // Mostrar mensaje de éxito después de que termine la impresión
-      if (selectedTable.id.startsWith('account-')) {
-        toast.success(`Pedido procesado exitosamente para ${selectedTable.name}`);
-      } else {
-        toast.success(`Pedido procesado exitosamente para Mesa ${selectedTable.number}`);
+        // Cerrar el toast de procesando
+        toast.dismiss(processingToast);
+        
+        // Mostrar mensaje de éxito después de que termine la impresión
+        if (selectedTable.id.startsWith('account-')) {
+          toast.success(`Pedido procesado exitosamente para ${selectedTable.name}`);
+        } else {
+          toast.success(`Pedido procesado exitosamente para Mesa ${selectedTable.number}`);
+        }
+        
+      } catch (error) {
+        console.error('Error procesando impresión:', error);
+        // Cerrar el toast de procesando
+        toast.dismiss(processingToast);
+        // Mostrar error al usuario
+        toast.error('Error al procesar la impresión');
       }
-      
-    } catch (error) {
-      console.error('Error procesando impresión:', error);
-      // Cerrar el toast de procesando
-      toast.dismiss(processingToast);
-      // Mostrar error al usuario
-      toast.error('Error al procesar la impresión');
+    } else {
+      // Si no hay productos nuevos, mostrar mensaje de éxito sin impresión
+      if (selectedTable.id.startsWith('account-')) {
+        toast.success(`Pedido actualizado para ${selectedTable.name}`);
+      } else {
+        toast.success(`Pedido actualizado para Mesa ${selectedTable.number}`);
+      }
     }
     
     // Limpiar todo y volver a la pantalla de mesas DESPUÉS de que termine la impresión
     setCurrentOrder([]);
     setSelectedCustomer(null);
     setSelectedTable(null);
+    
+    // Limpiar estado de impresión incremental (pero mantener editOrderId si estamos editando)
+    setOriginalOrderItems([]);
+    if (!editOrderId) {
+      setOriginalTotalForEdit(0);
+    }
+    
     setIsTableModalOpen(true);
   };
 
@@ -1118,19 +1281,18 @@ const Dashboard: React.FC = () => {
         // Para mesas normales, limpiar el pedido
         clearTableOrder(selectedTable.id);
         
-        // Actualizar la mesa seleccionada para reflejar el nuevo estado
-        setSelectedTable({
-          ...selectedTable,
-          status: 'available',
-          occupiedSince: undefined,
-          currentOrder: undefined
-        });
-        
         toast.success(`Mesa ${selectedTable.number} vaciada y liberada exitosamente`);
         
         // Limpiar también el carrito local
         setCurrentOrder([]);
         setSelectedCustomer(null);
+        
+        // Deseleccionar la mesa y abrir modal de selección
+        setSelectedTable(null);
+        // Pequeño retraso para asegurar que el estado se actualice
+        setTimeout(() => {
+          setIsTableModalOpen(true);
+        }, 100);
       }
     };
 
@@ -1143,7 +1305,7 @@ const Dashboard: React.FC = () => {
 
 
 
-  const { subtotal, tax, total } = calculateTotal();
+  const totals = calculateTotal();
 
   return (
     <div className="h-full flex flex-col lg:flex-row bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
@@ -1417,11 +1579,11 @@ const Dashboard: React.FC = () => {
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span>Subtotal (sin IVA):</span>
-                    <span>{getCurrencySymbol()}{formatPrice(subtotal)}</span>
+                    <span>{getCurrencySymbol()}{formatPrice(totals.subtotal)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span>IVA (21%):</span>
-                    <span>{getCurrencySymbol()}{formatPrice(tax)}</span>
+                    <span>{getCurrencySymbol()}{formatPrice(totals.tax)}</span>
                   </div>
                   
                   {/* Información de cobros parciales */}
@@ -1429,7 +1591,7 @@ const Dashboard: React.FC = () => {
                     <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 space-y-1">
                       <div className="flex justify-between text-xs text-yellow-800">
                         <span className="font-medium">Total actual:</span>
-                        <span>{getCurrencySymbol()}{formatPrice(total)}</span>
+                        <span>{getCurrencySymbol()}{formatPrice(totals.total)}</span>
                       </div>
                       <div className="flex justify-between text-xs text-yellow-700">
                         <span>Ya cobrado:</span>
@@ -1437,14 +1599,14 @@ const Dashboard: React.FC = () => {
                       </div>
                       <div className="flex justify-between text-sm text-yellow-800 font-semibold border-t border-yellow-300 pt-1">
                         <span>Pendiente por cobrar:</span>
-                        <span>{getCurrencySymbol()}{formatPrice(total - getTotalPartialPayments(selectedTable.id))}</span>
+                        <span>{getCurrencySymbol()}{formatPrice(totals.total - getTotalPartialPayments(selectedTable.id))}</span>
                       </div>
                     </div>
                   )}
                   
                   <div className="flex justify-between text-lg font-bold border-t pt-2 border-gray-300">
                     <span className="text-gray-800">Total (IVA incl.):</span>
-                    <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">{getCurrencySymbol()}{formatPrice(total)}</span>
+                    <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">{getCurrencySymbol()}{formatPrice(totals.total)}</span>
                   </div>
                 </div>
               ) : editOrderId && (
@@ -1763,9 +1925,9 @@ const Dashboard: React.FC = () => {
          }] : currentOrder}
          tableNumber={selectedTable?.number || ''}
          customerName={selectedCustomer ? `${selectedCustomer.name} ${selectedCustomer.lastName}` : ''}
-         subtotal={tempDiffForPayment ? (tempDiffForPayment.isIncrease ? tempDiffForPayment.amount : -tempDiffForPayment.amount) : subtotal}
-         tax={tempDiffForPayment ? 0 : tax}
-         total={tempDiffForPayment ? (tempDiffForPayment.isIncrease ? tempDiffForPayment.amount : -tempDiffForPayment.amount) : total}
+         subtotal={tempDiffForPayment ? (tempDiffForPayment.isIncrease ? tempDiffForPayment.amount : -tempDiffForPayment.amount) : totals.subtotal}
+         tax={tempDiffForPayment ? 0 : totals.tax}
+         total={tempDiffForPayment ? (tempDiffForPayment.isIncrease ? tempDiffForPayment.amount : -tempDiffForPayment.amount) : totals.total}
          mergedTableNumber={selectedTable?.mergedWith}
          titleOverride={localStorage.getItem('orderToEdit') ? (tempDiffForPayment ? 'Cobro de diferencia' : 'Actualizar Ticket') : undefined}
          skipDbSave={!!localStorage.getItem('orderToEdit')}

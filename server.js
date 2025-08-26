@@ -2,6 +2,7 @@
 const express = require('express');
 const cors = require('cors');
 const si = require('systeminformation');
+const puppeteer = require('puppeteer');
 
 const app = express();
 const PORT = 3001;
@@ -199,46 +200,87 @@ app.post('/print', async (req, res) => {
 </html>`;
         fs.writeFileSync(htmlFileForPrint, htmlContentForPrint, 'utf8');
         
-                 // Método 1: Usar start para abrir el archivo HTML con el navegador por defecto
-        const startCommand = `start "" "${htmlFileForPrint}"`;
-        console.log(`🖨️ Ejecutando start: ${startCommand}`);
+                 // Método 1: Usar Puppeteer para imprimir directamente
+        console.log(`🖨️ Imprimiendo directamente con Puppeteer...`);
         console.log(`🖨️ Archivo HTML para impresión creado: ${htmlFileForPrint}`);
-        console.log(`🖨️ Contenido del archivo:`, htmlContentForPrint);
         
-        exec(startCommand, (error, stdout, stderr) => {
-          console.log(`🖨️ ===== RESULTADO START =====`);
-          console.log(`🖨️ Error:`, error);
-          console.log(`🖨️ stdout:`, stdout);
-          console.log(`🖨️ stderr:`, stderr);
+        try {
+          const browser = await puppeteer.launch({ 
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+          });
           
-          if (error) {
-            console.error('❌ Error ejecutando start:', error);
-            console.error('stderr:', stderr);
-          } else {
-            console.log('✅ start ejecutado correctamente');
+          const page = await browser.newPage();
+          
+          // Cargar el archivo HTML
+          await page.goto(`file://${htmlFileForPrint}`, { waitUntil: 'networkidle0' });
+          
+          // Configurar para impresión
+          await page.emulateMediaType('print');
+          
+          // Imprimir directamente a impresoras PDF
+          if (printerName && (printerName.toLowerCase().includes('pdf24') || printerName.toLowerCase().includes('nitro') || printerName.toLowerCase().includes('adobe'))) {
+            // Para impresoras PDF, generar PDF y guardarlo
+            const pdfPath = path.join(tempDir, `ticket_${timestamp}.pdf`);
+            await page.pdf({
+              path: pdfPath,
+              format: 'A4',
+              printBackground: true,
+              margin: {
+                top: '10mm',
+                right: '10mm',
+                bottom: '10mm',
+                left: '10mm'
+              }
+            });
+            
+            console.log(`✅ PDF generado: ${pdfPath}`);
             printSuccess = true;
-            console.log('✅ Archivo HTML abierto en navegador - Usar Ctrl+P para imprimir');
+            
+            // Abrir el PDF generado
+            const openPdfCommand = `start "" "${pdfPath}"`;
+            exec(openPdfCommand, (error) => {
+              if (error) {
+                console.error('❌ Error abriendo PDF:', error);
+              } else {
+                console.log('✅ PDF abierto automáticamente');
+              }
+            });
+            
+          } else {
+            // Para otras impresoras, usar la API de impresión del navegador
+            await page.evaluate(() => {
+              window.print();
+            });
+            
+            console.log('✅ Impresión enviada directamente a la impresora');
+            printSuccess = true;
           }
           
-          // Limpiar archivo HTML de impresión después de más tiempo
-          setTimeout(() => {
-            try {
-              if (fs.existsSync(htmlFileForPrint)) {
-                fs.unlinkSync(htmlFileForPrint);
-                console.log(`🗑️ Archivo HTML de impresión eliminado: ${htmlFileForPrint}`);
-              }
-            } catch (cleanupError) {
-              console.error('Error limpiando archivo HTML de impresión:', cleanupError);
+          await browser.close();
+          
+        } catch (puppeteerError) {
+          console.error('❌ Error con Puppeteer:', puppeteerError);
+          
+          // Fallback: usar el método anterior
+          console.log('🔄 Usando método de respaldo...');
+          const startCommand = `start "" "${htmlFileForPrint}"`;
+          exec(startCommand, (error) => {
+            if (error) {
+              console.error('❌ Error con método de respaldo:', error);
+            } else {
+              console.log('✅ Archivo HTML abierto en navegador');
+              printSuccess = true;
             }
-          }, 10000);
-        });
+          });
+        }
         
         // Esperar un poco para que el comando se ejecute
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-                 // Si start no funcionó, intentar método alternativo con PowerShell
+                 // Si Puppeteer no funcionó, intentar método alternativo
          if (!printSuccess) {
-           console.log(`🖨️ start falló, intentando método alternativo con PowerShell...`);
+           console.log(`🖨️ Puppeteer falló, intentando método alternativo...`);
           
            // Método 2: Usar PowerShell para abrir el archivo
            const psCommand = `powershell -Command "Start-Process '${htmlFileForPrint}'"`;
@@ -256,9 +298,21 @@ app.post('/print', async (req, res) => {
            await new Promise(resolve => setTimeout(resolve, 2000));
          }
         
-      } catch (psError) {
-        console.error('❌ Error en PowerShell:', psError);
-      }
+              } catch (psError) {
+          console.error('❌ Error en PowerShell:', psError);
+        }
+        
+        // Limpiar archivos después de un delay
+        setTimeout(() => {
+          try {
+            if (fs.existsSync(htmlFileForPrint)) {
+              fs.unlinkSync(htmlFileForPrint);
+              console.log(`🗑️ Archivo HTML de impresión eliminado: ${htmlFileForPrint}`);
+            }
+          } catch (cleanupError) {
+            console.error('Error limpiando archivo HTML de impresión:', cleanupError);
+          }
+        }, 5000);
     }
     
     // Método 3: Si no hay impresora específica o los métodos anteriores fallaron, abrir con navegador
