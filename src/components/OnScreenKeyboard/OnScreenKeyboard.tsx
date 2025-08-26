@@ -168,7 +168,7 @@ const OnScreenKeyboard: React.FC = () => {
             <button 
               className="rounded bg-gray-100 hover:bg-gray-200 text-sm col-span-2 flex items-center justify-center" 
               style={{ height: buttonHeight }}
-              onClick={() => moveCaret(-1)}
+              onClick={() => moveCaret('left')}
             >
               ◀
             </button>
@@ -185,7 +185,7 @@ const OnScreenKeyboard: React.FC = () => {
             <button 
               className="rounded bg-gray-100 hover:bg-gray-200 text-sm col-span-2 flex items-center justify-center" 
               style={{ height: buttonHeight }}
-              onClick={() => moveCaret(1)}
+              onClick={() => moveCaret('right')}
             >
               ▶
             </button>

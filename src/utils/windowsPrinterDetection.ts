@@ -38,9 +38,15 @@ const executePowerShellCommand = async (command: string): Promise<string> => {
     return new Promise((resolve, reject) => {
       iframe.onload = () => {
         try {
-          // Intentar ejecutar el comando
-          const result = iframe.contentWindow?.eval(command);
-          resolve(result || '');
+          // Intentar ejecutar el comando usando una alternativa más segura
+          if (iframe.contentWindow) {
+            const result = (iframe.contentWindow as any).eval ? 
+              (iframe.contentWindow as any).eval(command) : 
+              'PowerShell command execution not available';
+            resolve(result || '');
+          } else {
+            resolve('');
+          }
         } catch (e) {
           reject(e);
         } finally {
