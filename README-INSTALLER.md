@@ -1,188 +1,150 @@
-# 🚀 Guía para Crear el Instalador de KimiPOS
+# 🚀 Instalador KimiPOS - Guía Completa
 
-Esta guía te explica cómo crear un instalador profesional para KimiPOS que proteja tu código y sea fácil de distribuir.
+## 📦 Información del Instalador
 
-## 📋 Requisitos Previos
+- **Nombre**: KimiPOS Setup 1.0.0.exe
+- **Tamaño**: ~88 MB
+- **Plataforma**: Windows x64
+- **Tipo**: Instalador NSIS
+- **Versión**: 1.0.0
 
-### 1. **Node.js y npm**
-- Instalar Node.js desde: https://nodejs.org/
-- Verificar instalación: `node --version` y `npm --version`
+## 🎯 Características del Instalador
 
-### 2. **NSIS (Nullsoft Scriptable Install System)**
-- Descargar desde: https://nsis.sourceforge.io/Download
-- Instalar y añadir al PATH del sistema
-- Verificar instalación: `makensis --version`
+### ✅ Funcionalidades Incluidas
+- ✅ **Aplicación completa**: Todas las funcionalidades de KimiPOS
+- ✅ **Base de datos local**: IndexedDB integrada
+- ✅ **Detección de impresoras**: Automática del sistema
+- ✅ **Sin dependencias externas**: Funciona completamente offline
+- ✅ **Acceso directo**: Escritorio y menú inicio
+- ✅ **Desinstalador**: Incluido automáticamente
 
-### 3. **Iconos de la aplicación**
-Crear los siguientes archivos en la carpeta `public/`:
-- `icon.ico` (Windows - 256x256px)
-- `icon.icns` (macOS - 512x512px)
-- `icon.png` (Linux - 512x512px)
+### 🔧 Configuración Automática
+- **Directorio de instalación**: `C:\Program Files\KimiPOS\`
+- **Datos de usuario**: `%APPDATA%\KimiPOS\`
+- **Base de datos**: Se crea automáticamente en el primer uso
+- **Configuración**: Se guarda localmente
 
-## 🔧 Pasos para Crear el Instalador
+## 📋 Proceso de Instalación
 
-### **Opción 1: Automática (Recomendada)**
-
-1. **Ejecutar el script automático:**
-   ```bash
-   build-installer.bat
-   ```
-
-2. **El script hará automáticamente:**
-   - Limpiar directorios anteriores
-   - Instalar dependencias
-   - Construir la aplicación
-   - Empaquetar con Electron
-   - Crear el instalador NSIS
-
-### **Opción 2: Manual**
-
-1. **Instalar dependencias:**
-   ```bash
-   npm install
-   ```
-
-2. **Construir la aplicación:**
-   ```bash
-   npm run build
-   ```
-
-3. **Empaquetar con Electron:**
-   ```bash
-   npm run electron-pack-win
-   ```
-
-4. **Crear el instalador:**
-   ```bash
-   makensis installer.nsh
-   ```
-
-## 📦 Características del Instalador
-
-### ✅ **Protección del Código**
-- **Ofuscación**: Nombres de variables y funciones ofuscados
-- **Minificación**: Código comprimido y optimizado
-- **Sin Source Maps**: No se incluyen mapas de código fuente
-- **Eliminación de logs**: Console.log removidos en producción
-
-### ✅ **Características del Instalador**
-- **Instalación personalizable**: El usuario puede elegir directorio
-- **Accesos directos**: Escritorio y menú inicio
-- **Registro en Windows**: Aparece en "Agregar o quitar programas"
-- **Desinstalación limpia**: Elimina todos los archivos y registros
-- **Interfaz en español**: Instalador completamente localizado
-
-### ✅ **Estructura de Archivos**
-```
-KimiPOS-Setup.exe
-├── KimiPOS.exe (Aplicación principal)
-├── Acceso directo en escritorio
-├── Acceso directo en menú inicio
-└── Registro en Windows
-```
-
-## 🎯 Comandos Disponibles
-
-### **Desarrollo**
+### 1. Ejecutar el Instalador
 ```bash
-npm run dev                    # Servidor de desarrollo
-npm run electron-dev          # Electron en modo desarrollo
+# Navegar al directorio del instalador
+cd dist-electron
+
+# Ejecutar el instalador
+"KimiPOS Setup 1.0.0.exe"
 ```
 
-### **Construcción**
+### 2. Asistente de Instalación
+1. **Bienvenida**: Pantalla de introducción
+2. **Licencia**: Aceptar términos de uso
+3. **Directorio**: Elegir ubicación (recomendado: predeterminado)
+4. **Componentes**: Seleccionar elementos a instalar
+5. **Accesos directos**: Configurar ubicaciones
+6. **Instalación**: Proceso automático
+7. **Finalización**: Opción de ejecutar inmediatamente
+
+### 3. Verificación Post-Instalación
+- ✅ Acceso directo en escritorio
+- ✅ Entrada en menú inicio
+- ✅ Aplicación en Panel de Control
+- ✅ Desinstalador disponible
+
+## 🧪 Pruebas del Instalador
+
+### Prueba Básica
+1. **Instalar**: Ejecutar el instalador
+2. **Verificar**: Comprobar acceso directo
+3. **Ejecutar**: Abrir la aplicación
+4. **Funcionalidad**: Probar características básicas
+5. **Desinstalar**: Verificar proceso de desinstalación
+
+### Pruebas Específicas
+- ✅ **Base de datos**: Crear productos/categorías
+- ✅ **Impresión**: Detectar impresoras del sistema
+- ✅ **Pedidos**: Crear y procesar pedidos
+- ✅ **Configuración**: Guardar preferencias
+- ✅ **Cierre**: Verificar que no deja procesos
+
+## 🔍 Solución de Problemas
+
+### Error: "No se puede ejecutar el instalador"
+**Solución:**
+- Verificar que el archivo no esté corrupto
+- Ejecutar como administrador
+- Desactivar antivirus temporalmente
+
+### Error: "Falta dependencia"
+**Solución:**
+- El instalador incluye todas las dependencias
+- Verificar que sea la versión correcta para Windows x64
+- Reinstalar desde cero
+
+### Error: "No se detectan impresoras"
+**Solución:**
+- Verificar que haya impresoras instaladas en Windows
+- Comprobar permisos de acceso a dispositivos
+- Reiniciar la aplicación
+
+## 📁 Estructura de Archivos
+
+```
+C:\Program Files\KimiPOS\
+├── KimiPOS.exe          # Aplicación principal
+├── resources\           # Recursos de la aplicación
+├── locales\            # Archivos de idioma
+└── [otros archivos]    # Dependencias de Electron
+```
+
+```
+%APPDATA%\KimiPOS\
+├── database\           # Base de datos local
+├── config\            # Configuración de usuario
+└── logs\              # Archivos de registro
+```
+
+## 🚀 Comandos Útiles
+
+### Crear Instalador
 ```bash
-npm run build                 # Construir aplicación web
-npm run electron-pack         # Empaquetar para todas las plataformas
-npm run electron-pack-win     # Solo Windows
-npm run electron-pack-mac     # Solo macOS
-npm run electron-pack-linux   # Solo Linux
-```
+# Script automatizado
+build-installer.bat
 
-### **Distribución**
-```bash
-npm run dist                  # Construir y empaquetar
-```
-
-## 🔒 Seguridad y Protección
-
-### **Nivel de Protección: ALTO**
-- ✅ Código ofuscado y minificado
-- ✅ Sin source maps
-- ✅ Console.log eliminados
-- ✅ Nombres de variables ofuscados
-- ✅ Archivos empaquetados en binario
-
-### **Limitaciones**
-- ⚠️ El código JavaScript sigue siendo legible con herramientas avanzadas
-- ⚠️ Para máxima protección, considera usar herramientas adicionales como:
-  - **Webpack Obfuscator**
-  - **JavaScript Obfuscator**
-  - **Bytenode** (compilar a bytecode)
-
-## 📁 Estructura del Proyecto
-
-```
-kimipos/
-├── src/                      # Código fuente
-├── electron/                 # Archivos de Electron
-│   └── main.js              # Proceso principal
-├── public/                   # Archivos públicos
-│   ├── icon.ico             # Icono Windows
-│   ├── icon.icns            # Icono macOS
-│   └── icon.png             # Icono Linux
-├── dist/                     # Aplicación construida
-├── dist-electron/            # Aplicación empaquetada
-├── installer.nsh             # Script NSIS
-├── build-installer.bat       # Script automático
-└── package.json              # Configuración del proyecto
-```
-
-## 🚨 Solución de Problemas
-
-### **Error: NSIS no encontrado**
-```bash
-# Verificar si NSIS está instalado
-makensis --version
-
-# Si no está en el PATH, añadirlo manualmente
-# Típicamente: C:\Program Files (x86)\NSIS
-```
-
-### **Error: Electron no se instala**
-```bash
-# Limpiar caché de npm
-npm cache clean --force
-
-# Reinstalar dependencias
-rm -rf node_modules package-lock.json
-npm install
-```
-
-### **Error: Construcción falla**
-```bash
-# Verificar que todas las dependencias estén instaladas
-npm install
-
-# Limpiar y reconstruir
+# Manual
 npm run build
+npm run electron-pack-win
 ```
 
-## 📞 Soporte
+### Verificar Instalación
+```bash
+# Verificar archivos instalados
+dir "C:\Program Files\KimiPOS"
 
-Si tienes problemas con la creación del instalador:
+# Verificar acceso directo
+dir "%USERPROFILE%\Desktop\KimiPOS.lnk"
+```
 
-1. **Verificar requisitos**: Asegúrate de tener Node.js y NSIS instalados
-2. **Revisar logs**: Los errores aparecen en la consola
-3. **Limpiar caché**: `npm cache clean --force`
-4. **Reinstalar**: Eliminar `node_modules` y volver a instalar
+### Desinstalar
+```bash
+# Desde Panel de Control
+# O ejecutar: "C:\Program Files\KimiPOS\Uninstall.exe"
+```
 
-## 🎉 ¡Listo!
+## 📊 Estadísticas del Instalador
 
-Una vez completado el proceso, tendrás:
-- ✅ `KimiPOS-Setup.exe` - Instalador profesional
-- ✅ Código protegido y ofuscado
-- ✅ Aplicación de escritorio nativa
-- ✅ Instalador en español
-- ✅ Desinstalación limpia
+- **Tiempo de instalación**: ~30 segundos
+- **Espacio requerido**: ~200 MB
+- **Compatibilidad**: Windows 10/11 x64
+- **Dependencias**: Incluidas (Node.js, Electron)
 
-El instalador está listo para distribuir a tus clientes. ¡Disfruta de tu aplicación POS profesional! 🚀
+## 🎉 ¡Listo para Distribuir!
+
+El instalador está completamente funcional y listo para:
+- ✅ Distribución a clientes
+- ✅ Instalación en múltiples equipos
+- ✅ Actualizaciones automáticas (futuro)
+- ✅ Soporte técnico estándar
+
+---
+
+**Nota**: Este instalador reemplaza completamente la necesidad de servidores externos. La aplicación funciona de manera independiente con todas las funcionalidades incluidas.

@@ -233,3 +233,4 @@ Si tienes problemas:
 
 ¡El sistema está diseñado para ser robusto y detectar automáticamente todas las impresoras de tu sistema! 🖨️✨
 
+

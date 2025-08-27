@@ -24,7 +24,14 @@ echo 🛠️  Utilidades:
 echo    • Lista de impresoras: http://localhost:3001/printers
 echo    • Estado del servidor: http://localhost:3001/health
 echo.
-echo 📖 Para detener: Ctrl+C en cada ventana
+echo ⚠️  IMPORTANTE - Cierre de Servidores:
+echo    • Al cerrar la aplicación web (localhost:5173), el servidor de desarrollo se detiene automáticamente
+echo    • El servidor de impresoras (puerto 3001) SEGUIRÁ CORRIENDO en segundo plano
+echo    • Para detener completamente: Ctrl+C en cada ventana de terminal
+echo.
+echo 🛑 Para detener todo el sistema:
+echo    1. Cerrar la aplicación web (se detiene automáticamente)
+echo    2. En la terminal del servidor de impresoras: Ctrl+C
 echo.
 
 pause

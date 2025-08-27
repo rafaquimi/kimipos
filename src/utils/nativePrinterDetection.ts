@@ -227,3 +227,4 @@ export const detectAllNativePrinters = async (): Promise<string[]> => {
   return allPrinters;
 };
 
+

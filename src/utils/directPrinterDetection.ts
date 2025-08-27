@@ -180,3 +180,4 @@ export const detectAndCombinePrinters = async (): Promise<string[]> => {
   }
 };
 
+
