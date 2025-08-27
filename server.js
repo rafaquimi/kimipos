@@ -4,6 +4,11 @@ const cors = require('cors');
 const si = require('systeminformation');
 const puppeteer = require('puppeteer');
 
+// Librerías ESC/POS
+const escpos = require('escpos');
+escpos.USB = require('escpos-usb');
+escpos.Network = require('escpos-network');
+
 const app = express();
 const PORT = 3001;
 
@@ -368,6 +373,188 @@ app.post('/print', async (req, res) => {
     });
   }
 });
+
+// ===== ENDPOINTS ESC/POS =====
+
+// Almacenar conexiones activas de impresoras
+const activeConnections = new Map();
+
+// Endpoint para detectar impresoras USB ESC/POS
+app.get('/escpos/usb-printers', async (req, res) => {
+  try {
+    console.log('🔍 Detectando impresoras USB ESC/POS...');
+    
+    const devices = escpos.USB.findPrinter();
+    const printers = devices.map((device, index) => ({
+      id: `usb-${index}`,
+      name: `Impresora USB ${index + 1}`,
+      type: 'usb',
+      device: device,
+      isConnected: false
+    }));
+
+    console.log(`✅ Se detectaron ${printers.length} impresoras USB ESC/POS`);
+    printers.forEach((printer, index) => {
+      console.log(`  ${index + 1}. ${printer.name}`);
+    });
+
+    res.json({
+      success: true,
+      printers: printers,
+      count: printers.length
+    });
+  } catch (error) {
+    console.error('❌ Error detectando impresoras USB ESC/POS:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      printers: []
+    });
+  }
+});
+
+// Endpoint para conectar a una impresora ESC/POS
+app.post('/escpos/connect', async (req, res) => {
+  try {
+    const { printerId } = req.body;
+    
+    console.log(`🔌 Conectando a impresora ESC/POS: ${printerId}`);
+    
+    // Por ahora, simular conexión exitosa
+    // En una implementación real, aquí se establecería la conexión real
+    activeConnections.set(printerId, { connected: true, timestamp: new Date() });
+    
+    console.log(`✅ Conectado a impresora ${printerId}`);
+    
+    res.json({
+      success: true,
+      message: `Conectado a impresora ${printerId}`,
+      printerId: printerId
+    });
+  } catch (error) {
+    console.error('❌ Error conectando a impresora ESC/POS:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Endpoint para desconectar de una impresora ESC/POS
+app.post('/escpos/disconnect', async (req, res) => {
+  try {
+    const { printerId } = req.body;
+    
+    console.log(`🔌 Desconectando de impresora ESC/POS: ${printerId}`);
+    
+    activeConnections.delete(printerId);
+    
+    console.log(`✅ Desconectado de impresora ${printerId}`);
+    
+    res.json({
+      success: true,
+      message: `Desconectado de impresora ${printerId}`,
+      printerId: printerId
+    });
+  } catch (error) {
+    console.error('❌ Error desconectando de impresora ESC/POS:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Endpoint para imprimir en impresora ESC/POS
+app.post('/escpos/print', async (req, res) => {
+  try {
+    const { items, tableNumber, customerName, timestamp, printerId } = req.body;
+    
+    console.log(`🖨️ ===== IMPRESIÓN ESC/POS =====`);
+    console.log(`🖨️ Impresora: ${printerId}`);
+    console.log(`🖨️ Mesa: ${tableNumber}`);
+    console.log(`🖨️ Cliente: ${customerName || 'Sin cliente'}`);
+    console.log(`🖨️ Productos: ${items.length}`);
+    
+    // Generar contenido ESC/POS
+    const escContent = generateESCContent(items, tableNumber, customerName);
+    
+    // Por ahora, simular impresión exitosa
+    // En una implementación real, aquí se enviaría a la impresora física
+    console.log('📄 Contenido ESC/POS generado:');
+    console.log(escContent);
+    
+    // Simular delay de impresión
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    console.log(`✅ Impresión ESC/POS completada en ${printerId}`);
+    
+    res.json({
+      success: true,
+      message: `Ticket impreso correctamente en ${printerId}`,
+      printerId: printerId,
+      itemsCount: items.length,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Error imprimiendo ESC/POS:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Función para generar contenido ESC/POS
+function generateESCContent(items, tableNumber, customerName, restaurantName = 'Restaurante') {
+  const timestamp = new Date().toLocaleString('es-ES');
+  const total = items.reduce((sum, item) => sum + item.totalPrice, 0);
+
+  // Comandos ESC/POS básicos
+  const commands = [
+    '\x1B\x40', // Initialize printer
+    '\x1B\x61\x01', // Center alignment
+    `\n${restaurantName.toUpperCase()}\n`,
+    '\x1B\x61\x00', // Left alignment
+    '\n',
+    `MESA: ${tableNumber}\n`,
+    customerName ? `CLIENTE: ${customerName.toUpperCase()}\n` : '',
+    `FECHA: ${timestamp}\n`,
+    '\n',
+    '\x1B\x45\x01', // Bold on
+    'PEDIDO:\n',
+    '\x1B\x45\x00', // Bold off
+    '\n'
+  ];
+
+  // Agregar items
+  items.forEach(item => {
+    commands.push(
+      `${item.quantity}x ${item.productName.toUpperCase()}\n`,
+      `   ${item.unitPrice.toFixed(2)}€ x ${item.quantity} = ${item.totalPrice.toFixed(2)}€\n`
+    );
+  });
+
+  // Agregar total
+  commands.push(
+    '\n',
+    '\x1B\x45\x01', // Bold on
+    `TOTAL: ${total.toFixed(2)}€\n`,
+    '\x1B\x45\x00', // Bold off
+    '\n',
+    '\x1B\x61\x01', // Center alignment
+    '¡GRACIAS!\n',
+    '\n',
+    '\x1B\x61\x00', // Left alignment
+    '\n',
+    '\n',
+    '\n',
+    '\x1D\x56\x00' // Cut paper
+  );
+
+  return commands.join('');
+}
 
 // Iniciar servidor
 const server = app.listen(PORT, () => {

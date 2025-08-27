@@ -13,7 +13,8 @@ import {
   DollarSign,
   Link2,
   X,
-  Settings
+  Settings,
+  Printer
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import TableSelectorModal from '../components/Table/TableSelectorModal';
@@ -43,6 +44,8 @@ import { db } from '../database/db';
 import { generatePOSTicketPDF } from '../utils/pdfGenerator';
 import { processOrderPrinting, processCancellationPrinting } from '../utils/printingService';
 import { useNavigate } from 'react-router-dom';
+import ESCPrinterSelector from '../components/ESCPrinterSelector';
+import { ESCPOSPrinter, escposPrinterService } from '../utils/escposPrinterService';
 
 interface OrderItem {
   productId: string;
@@ -105,7 +108,10 @@ const Dashboard: React.FC = () => {
   const [customerForRecharge, setCustomerForRecharge] = useState<Customer | null>(null);
   // Modal de selección de clientes
   const [showCustomerSelectorModal, setShowCustomerSelectorModal] = useState(false);
-    // Edición de tickets (desde Pedidos)
+  // Impresora ESC/POS seleccionada
+  const [selectedESCPrinter, setSelectedESCPrinter] = useState<ESCPOSPrinter | null>(null);
+  const [showESCPrinterSelector, setShowESCPrinterSelector] = useState(false);
+  // Edición de tickets (desde Pedidos)
   const [editOrderId, setEditOrderId] = useState<number | null>(null);
   const [originalTotalForEdit, setOriginalTotalForEdit] = useState<number | null>(null);
   const [originalOrderItems, setOriginalOrderItems] = useState<OrderItem[]>([]);
@@ -1299,11 +1305,58 @@ const Dashboard: React.FC = () => {
     showConfirmation(title, message, handleConfirm, 'danger');
   };
 
+  // Función para imprimir con impresora ESC/POS
+  const printWithESCPrinter = async () => {
+    if (currentOrder.length === 0) {
+      toast.error('El pedido está vacío');
+      return;
+    }
 
+    if (!selectedESCPrinter) {
+      toast.error('Debes seleccionar una impresora ESC/POS primero');
+      setShowESCPrinterSelector(true);
+      return;
+    }
 
+    if (!selectedESCPrinter.isConnected) {
+      toast.error('La impresora no está conectada');
+      return;
+    }
 
+    try {
+      const tableNumber = selectedTable 
+        ? (selectedTable.id.startsWith('account-') ? selectedTable.name : `Mesa ${selectedTable.number}`)
+        : (isTicketWithoutTable ? 'Ticket sin mesa' : 'Sin mesa');
+      
+      const customerName = selectedCustomer 
+        ? `${selectedCustomer.name} ${selectedCustomer.lastName}`
+        : undefined;
 
+      const printJob = {
+        items: currentOrder,
+        tableNumber,
+        customerName,
+        timestamp: new Date(),
+        printerId: selectedESCPrinter.id
+      };
 
+      toast.loading('Imprimiendo en impresora térmica...', { duration: Infinity });
+      
+      const success = await escposPrinterService.printTicket(printJob);
+      
+      toast.dismiss();
+      
+      if (success) {
+        toast.success(`Ticket impreso correctamente en ${selectedESCPrinter.name}`);
+      } else {
+        toast.error(`Error imprimiendo en ${selectedESCPrinter.name}`);
+      }
+    } catch (error) {
+      toast.dismiss();
+      console.error('Error imprimiendo con ESC/POS:', error);
+      toast.error('Error al imprimir con la impresora térmica');
+    }
+  };
 
   const totals = calculateTotal();
 
@@ -1458,6 +1511,17 @@ const Dashboard: React.FC = () => {
                   <div className="flex items-center space-x-2 bg-blue-100 px-2 lg:px-3 py-2 rounded-lg shadow-sm border border-blue-200">
                     <Receipt className="w-3 h-3 lg:w-4 lg:h-4 text-blue-600" />
                     <span className="text-xs lg:text-sm font-medium text-blue-700">Ticket sin mesa</span>
+                  </div>
+                )}
+                {selectedESCPrinter && (
+                  <div className="flex items-center space-x-2 bg-orange-100 px-2 lg:px-3 py-2 rounded-lg shadow-sm border border-orange-200">
+                    <Printer className="w-3 h-3 lg:w-4 lg:h-4 text-orange-600" />
+                    <span className="text-xs lg:text-sm font-medium text-orange-700 truncate">
+                      {selectedESCPrinter.name}
+                    </span>
+                    <div className={`w-2 h-2 lg:w-3 lg:h-3 rounded-full flex-shrink-0 ${
+                      selectedESCPrinter.isConnected ? 'bg-green-500' : 'bg-red-500'
+                    }`} />
                   </div>
                 )}
               </div>
@@ -1744,6 +1808,30 @@ const Dashboard: React.FC = () => {
                   <Receipt className="w-4 h-4" />
                   <span>Procesar Pedido</span>
                 </button>
+                
+                {/* Botón de impresión ESC/POS */}
+                <div className="space-y-2">
+                  <button
+                    onClick={printWithESCPrinter}
+                    disabled={currentOrder.length === 0}
+                    className={`w-full py-3 px-4 rounded-lg font-semibold flex items-center justify-center space-x-1 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 text-sm ${
+                      currentOrder.length === 0
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white'
+                    }`}
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>Imprimir Térmica</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => setShowESCPrinterSelector(true)}
+                    className="w-full bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white py-2 px-3 rounded-lg font-medium flex items-center justify-center space-x-1 shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 text-xs"
+                  >
+                    <Settings className="w-3 h-3" />
+                    <span>Configurar Impresora</span>
+                  </button>
+                </div>
                 
                 <div className="grid grid-cols-1 gap-2">
                   <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-2 rounded-lg font-medium flex items-center justify-center space-x-1 transition-all duration-200 hover:shadow-md text-xs">
@@ -2080,6 +2168,14 @@ const Dashboard: React.FC = () => {
            onClose={() => setShowPendingChangesModal(false)}
            onSave={handleSaveAndNavigate}
            onDiscard={handleDiscardAndNavigate}
+         />
+
+         {/* Modal de selector de impresoras ESC/POS */}
+         <ESCPrinterSelector
+           isOpen={showESCPrinterSelector}
+           onClose={() => setShowESCPrinterSelector(false)}
+           onSelectPrinter={setSelectedESCPrinter}
+           selectedPrinter={selectedESCPrinter}
          />
       </div>
     );
