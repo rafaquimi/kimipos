@@ -1307,19 +1307,13 @@ const Dashboard: React.FC = () => {
 
   // Función para imprimir con impresora ESC/POS
   const printWithESCPrinter = async () => {
+    console.log('🔍 DEBUG: printWithESCPrinter ejecutándose');
+    console.log('🔍 currentOrder:', currentOrder);
+    console.log('🔍 selectedTable:', selectedTable);
+    console.log('🔍 selectedCustomer:', selectedCustomer);
+    
     if (currentOrder.length === 0) {
       toast.error('El pedido está vacío');
-      return;
-    }
-
-    if (!selectedESCPrinter) {
-      toast.error('Debes seleccionar una impresora ESC/POS primero');
-      setShowESCPrinterSelector(true);
-      return;
-    }
-
-    if (!selectedESCPrinter.isConnected) {
-      toast.error('La impresora no está conectada');
       return;
     }
 
@@ -1332,29 +1326,48 @@ const Dashboard: React.FC = () => {
         ? `${selectedCustomer.name} ${selectedCustomer.lastName}`
         : undefined;
 
-      const printJob = {
-        items: currentOrder,
-        tableNumber,
-        customerName,
-        timestamp: new Date(),
-        printerId: selectedESCPrinter.id
+      // Preparar datos para el servicio Java
+      const ticketData = {
+        items: currentOrder.map(item => ({
+          quantity: item.quantity,
+          productName: item.productName,
+          unitPrice: item.unitPrice,
+          totalPrice: item.totalPrice
+        })),
+        tableNumber: tableNumber,
+        customerName: customerName || 'Cliente General',
+        restaurantName: 'RESTAURANTE EL BUENO'
       };
 
-      toast.loading('Imprimiendo en impresora térmica...', { duration: Infinity });
+      console.log('🔍 ticketData que se enviará:', ticketData);
+      console.log('🔍 JSON que se enviará:', JSON.stringify(ticketData));
+
+      toast.loading('Enviando a impresora Java...', { duration: Infinity });
       
-      const success = await escposPrinterService.printTicket(printJob);
+      // Enviar datos al servicio Java
+      const response = await fetch('http://localhost:3002', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(ticketData)
+      });
+
+      const result = await response.json();
       
       toast.dismiss();
       
-      if (success) {
-        toast.success(`Ticket impreso correctamente en ${selectedESCPrinter.name}`);
+      if (result.success) {
+        toast.success(`Ticket impreso correctamente en impresora POS-80C`);
+        console.log('✅ Impresión exitosa:', result.message);
       } else {
-        toast.error(`Error imprimiendo en ${selectedESCPrinter.name}`);
+        toast.error(`Error al imprimir: ${result.message}`);
+        console.error('❌ Error en impresión:', result.message);
       }
     } catch (error) {
       toast.dismiss();
-      console.error('Error imprimiendo con ESC/POS:', error);
-      toast.error('Error al imprimir con la impresora térmica');
+      console.error('Error imprimiendo con servicio Java:', error);
+      toast.error('Error al comunicarse con el servicio de impresión Java');
     }
   };
 

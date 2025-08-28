@@ -1,0 +1,19 @@
+RESTAURANTE EL BUENO
+========================================
+MESA: MESA-12
+CLIENTE: MARÍA GARCÍA
+FECHA: 2024-01-15 14:30:00
+----------------------------------------
+PEDIDO:
+2x Hamburguesa Clásica
+   8.50 EUR x 2 = 17.00 EUR
+1x Coca Cola
+   2.50 EUR x 1 = 2.50 EUR
+3x Patatas Fritas
+   3.00 EUR x 3 = 9.00 EUR
+1x Ensalada César
+   6.50 EUR x 1 = 6.50 EUR
+----------------------------------------
+TOTAL: 35.00 EUR
+
+¡GRACIAS!

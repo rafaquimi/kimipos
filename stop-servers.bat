@@ -44,3 +44,7 @@ netstat -ano | findstr ":5173" >nul 2>&1 && echo "    ACTIVO" || echo "    INACT
 echo.
 pause
 
+
+
+
+

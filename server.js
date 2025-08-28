@@ -71,302 +71,125 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Endpoint para imprimir
-app.post('/print', async (req, res) => {
+// Endpoint para imprimir en impresora ESC/POS
+app.post('/escpos/print', async (req, res) => {
   try {
-    const { content, printerName, type } = req.body;
+    const { items, tableNumber, customerName, timestamp, printerId } = req.body;
     
-    console.log(`🖨️ ===== NUEVA PETICIÓN DE IMPRESIÓN =====`);
-    console.log(`🖨️ Tipo: ${type}`);
-    console.log(`🖨️ Impresora: ${printerName || 'impresora por defecto'}`);
-    console.log(`🖨️ Contenido recibido:`, content);
-    console.log(`🖨️ Longitud del contenido: ${content.length} caracteres`);
+    console.log(`🖨️ ===== IMPRESIÓN ESC/POS =====`);
+    console.log(`🖨️ Impresora: ${printerId}`);
+    console.log(`🖨️ Mesa: ${tableNumber}`);
+    console.log(`🖨️ Cliente: ${customerName || 'Sin cliente'}`);
+    console.log(`🖨️ Productos: ${items.length}`);
     
-    // Crear un archivo HTML temporal para imprimir
-    const fs = require('fs');
-    const path = require('path');
-    const { exec } = require('child_process');
-    
-    // Crear directorio temporal si no existe
-    const tempDir = path.join(__dirname, 'temp');
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir);
-    }
-    
-    // Generar nombre único para el archivo
-    const timestamp = Date.now();
-    const htmlFile = path.join(tempDir, `print_${timestamp}.html`);
-    
-    // Crear contenido HTML completo
-    const htmlContent = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>${type}</title>
-    <style>
-        body { 
-            font-family: monospace; 
-            font-size: 12px; 
-            margin: 0; 
-            padding: 10px;
-            white-space: pre-line;
-            line-height: 1.2;
-        }
-        @media print {
-            body { margin: 0; }
-        }
-        .header { text-align: center; font-weight: bold; margin-bottom: 10px; }
-        .item { margin: 2px 0; }
-        .total { font-weight: bold; margin-top: 10px; border-top: 1px solid #000; padding-top: 5px; }
-    </style>
-</head>
-<body>
-    ${content}
-</body>
-</html>`;
-    
-    // Escribir archivo HTML
-    fs.writeFileSync(htmlFile, htmlContent, 'utf8');
-    
-    console.log(`📄 Archivo HTML creado: ${htmlFile}`);
-    
-    let printSuccess = false;
-    
-    // Método 1: Si hay impresora específica, intentar imprimir directamente
-    if (printerName) {
-      try {
-        console.log(`🖨️ Intentando imprimir directamente en ${printerName}...`);
+    // Intentar imprimir usando PDF optimizado para impresoras térmicas
+    try {
+      const { exec } = require('child_process');
+      const fs = require('fs');
+      const path = require('path');
+      const puppeteer = require('puppeteer');
+      
+      // Crear directorio temporal si no existe
+      const tempDir = path.join(__dirname, 'temp');
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir);
+      }
+      
+      // Generar nombre único para el archivo
+      const timestamp = Date.now();
+      const pdfFile = path.join(tempDir, `print_${timestamp}.pdf`);
+      
+      // Generar contenido HTML optimizado para térmica
+      const htmlContent = generateThermalHTML(items, tableNumber, customerName);
+      
+      // Generar PDF con Puppeteer
+      const pdfGenerated = await generatePDFWithPuppeteer(htmlContent, pdfFile);
+      
+      if (pdfGenerated) {
+        console.log('📄 PDF generado:', pdfFile);
         
-        // Crear un archivo HTML optimizado para impresión
-        const htmlFileForPrint = path.join(tempDir, `print_${timestamp}_for_print.html`);
-        const htmlContentForPrint = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>${type}</title>
-    <style>
-        @page {
-            size: 80mm auto;
-            margin: 5mm;
-        }
-        body { 
-            font-family: 'Courier New', monospace; 
-            font-size: 10px; 
-            margin: 0; 
-            padding: 5px;
-            white-space: pre-line;
-            line-height: 1.1;
-            width: 70mm;
-        }
-        @media print {
-            body { 
-                margin: 0; 
-                padding: 0;
-            }
-        }
-        .header { 
-            text-align: center; 
-            font-weight: bold; 
-            margin-bottom: 8px; 
-            font-size: 12px;
-        }
-        .item { 
-            margin: 1px 0; 
-            display: flex;
-            justify-content: space-between;
-        }
-        .total { 
-            font-weight: bold; 
-            margin-top: 8px; 
-            border-top: 1px solid #000; 
-            padding-top: 3px; 
-            text-align: center;
-        }
-        .footer {
-            text-align: center;
-            margin-top: 10px;
-            font-size: 8px;
-        }
-    </style>
-</head>
-<body>
-    ${content}
-    <script>
-        // Auto-print cuando se carga la página
-        window.onload = function() {
-            setTimeout(function() {
-                window.print();
-            }, 500);
-        };
-    </script>
-</body>
-</html>`;
-        fs.writeFileSync(htmlFileForPrint, htmlContentForPrint, 'utf8');
-        
-                 // Método 1: Usar Puppeteer para imprimir directamente
-        console.log(`🖨️ Imprimiendo directamente con Puppeteer...`);
-        console.log(`🖨️ Archivo HTML para impresión creado: ${htmlFileForPrint}`);
-        
-        try {
-          const browser = await puppeteer.launch({ 
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-          });
-          
-          const page = await browser.newPage();
-          
-          // Cargar el archivo HTML
-          await page.goto(`file://${htmlFileForPrint}`, { waitUntil: 'networkidle0' });
-          
-          // Configurar para impresión
-          await page.emulateMediaType('print');
-          
-          // Imprimir directamente a impresoras PDF
-          if (printerName && (printerName.toLowerCase().includes('pdf24') || printerName.toLowerCase().includes('nitro') || printerName.toLowerCase().includes('adobe'))) {
-            // Para impresoras PDF, generar PDF y guardarlo
-            const pdfPath = path.join(tempDir, `ticket_${timestamp}.pdf`);
-            await page.pdf({
-              path: pdfPath,
-              format: 'A4',
-              printBackground: true,
-              margin: {
-                top: '10mm',
-                right: '10mm',
-                bottom: '10mm',
-                left: '10mm'
-              }
-            });
-            
-            console.log(`✅ PDF generado: ${pdfPath}`);
-            printSuccess = true;
-            
-            // Abrir el PDF generado
-            const openPdfCommand = `start "" "${pdfPath}"`;
-            exec(openPdfCommand, (error) => {
-              if (error) {
-                console.error('❌ Error abriendo PDF:', error);
-              } else {
-                console.log('✅ PDF abierto automáticamente');
-              }
-            });
-            
-          } else {
-            // Para otras impresoras, usar la API de impresión del navegador
-            await page.evaluate(() => {
-              window.print();
-            });
-            
-            console.log('✅ Impresión enviada directamente a la impresora');
-            printSuccess = true;
-          }
-          
-          await browser.close();
-          
-        } catch (puppeteerError) {
-          console.error('❌ Error con Puppeteer:', puppeteerError);
-          
-          // Fallback: usar el método anterior
-          console.log('🔄 Usando método de respaldo...');
-          const startCommand = `start "" "${htmlFileForPrint}"`;
-          exec(startCommand, (error) => {
-            if (error) {
-              console.error('❌ Error con método de respaldo:', error);
-            } else {
-              console.log('✅ Archivo HTML abierto en navegador');
-              printSuccess = true;
-            }
-          });
-        }
-        
-        // Esperar un poco para que el comando se ejecute
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-                 // Si Puppeteer no funcionó, intentar método alternativo
-         if (!printSuccess) {
-           console.log(`🖨️ Puppeteer falló, intentando método alternativo...`);
-          
-           // Método 2: Usar PowerShell para abrir el archivo
-           const psCommand = `powershell -Command "Start-Process '${htmlFileForPrint}'"`;
-           console.log(`🖨️ Ejecutando PowerShell: ${psCommand}`);
-          
-           exec(psCommand, (error, stdout, stderr) => {
-             if (error) {
-               console.error('❌ Error ejecutando PowerShell:', error);
-             } else {
-               console.log('✅ PowerShell ejecutado correctamente');
-               printSuccess = true;
-             }
-           });
-          
-           await new Promise(resolve => setTimeout(resolve, 2000));
-         }
-        
-              } catch (psError) {
-          console.error('❌ Error en PowerShell:', psError);
-        }
-        
-        // Limpiar archivos después de un delay
-        setTimeout(() => {
-          try {
-            if (fs.existsSync(htmlFileForPrint)) {
-              fs.unlinkSync(htmlFileForPrint);
-              console.log(`🗑️ Archivo HTML de impresión eliminado: ${htmlFileForPrint}`);
-            }
-          } catch (cleanupError) {
-            console.error('Error limpiando archivo HTML de impresión:', cleanupError);
-          }
-        }, 5000);
-    }
-    
-    // Método 3: Si no hay impresora específica o los métodos anteriores fallaron, abrir con navegador
-    if (!printSuccess) {
-      try {
-        console.log(`🖨️ Abriendo archivo HTML con navegador...`);
-        const printCommand = `start "" "${htmlFile}"`;
-        console.log(`🖨️ Ejecutando comando: ${printCommand}`);
+        // Imprimir PDF usando PowerShell
+        const printCommand = `powershell -Command "Start-Process -FilePath '${pdfFile}' -Verb Print -WindowStyle Hidden"`;
         
         exec(printCommand, (error, stdout, stderr) => {
           if (error) {
             console.error('❌ Error ejecutando comando de impresión:', error);
+            // Limpiar archivo temporal
+            if (fs.existsSync(pdfFile)) {
+              fs.unlinkSync(pdfFile);
+            }
+            
+            res.status(500).json({
+              success: false,
+              error: `Error de impresión: ${error.message}`,
+              fallbackContent: htmlContent
+            });
           } else {
-            console.log('✅ Comando de impresión ejecutado correctamente');
-            printSuccess = true;
+            console.log('✅ Comando de impresión ejecutado');
+            
+            // Limpiar archivo temporal después de un delay
+            setTimeout(() => {
+              if (fs.existsSync(pdfFile)) {
+                fs.unlinkSync(pdfFile);
+              }
+            }, 10000);
+            
+            res.json({
+              success: true,
+              message: `Ticket impreso correctamente en ${printerId}`,
+              printerId: printerId,
+              itemsCount: items.length,
+              timestamp: new Date().toISOString()
+            });
           }
         });
         
-        await new Promise(resolve => setTimeout(resolve, 2000));
+      } else {
+        // Fallback: imprimir HTML directamente
+        console.log('🔄 Intentando fallback con HTML directo...');
+        const htmlFile = path.join(tempDir, `fallback_${timestamp}.html`);
+        fs.writeFileSync(htmlFile, htmlContent, 'utf8');
         
-      } catch (printError) {
-        console.error('❌ Error en proceso de impresión:', printError);
+        const mshtaCommand = `mshta "javascript:var w=window.open('${htmlFile}','','width=80mm,height=auto');w.print();w.close();close();"`;
+        
+        exec(mshtaCommand, (error, stdout, stderr) => {
+          // Limpiar archivo HTML
+          setTimeout(() => {
+            if (fs.existsSync(htmlFile)) {
+              fs.unlinkSync(htmlFile);
+            }
+          }, 5000);
+          
+          if (error) {
+            console.error('❌ Error con HTML directo:', error.message);
+            res.status(500).json({
+              success: false,
+              error: `Error de impresión: ${error.message}`
+            });
+          } else {
+            console.log('✅ Impresión HTML directa ejecutada');
+            res.json({
+              success: true,
+              message: `Ticket impreso correctamente en ${printerId}`,
+              printerId: printerId,
+              itemsCount: items.length,
+              timestamp: new Date().toISOString()
+            });
+          }
+        });
       }
+      
+    } catch (printError) {
+      console.error('❌ Error en impresión:', printError);
+      
+      res.status(500).json({
+        success: false,
+        error: `Error de impresión: ${printError.message}`
+      });
     }
     
-    // Limpiar archivo HTML después de un delay
-    setTimeout(() => {
-      try {
-        if (fs.existsSync(htmlFile)) {
-          fs.unlinkSync(htmlFile);
-          console.log(`🗑️ Archivo HTML eliminado: ${htmlFile}`);
-        }
-      } catch (cleanupError) {
-        console.error('Error limpiando archivo HTML:', cleanupError);
-      }
-    }, 10000);
-    
-    console.log(`✅ ${type} procesado correctamente`);
-    
-    res.json({
-      success: true,
-      message: `${type} procesado correctamente`,
-      printer: printerName || 'impresora por defecto',
-      fileCreated: htmlFile,
-      timestamp: new Date().toISOString()
-    });
-    
   } catch (error) {
-    console.error('❌ Error imprimiendo:', error);
+    console.error('❌ Error imprimiendo ESC/POS:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -421,7 +244,6 @@ app.post('/escpos/connect', async (req, res) => {
     console.log(`🔌 Conectando a impresora ESC/POS: ${printerId}`);
     
     // Por ahora, simular conexión exitosa
-    // En una implementación real, aquí se establecería la conexión real
     activeConnections.set(printerId, { connected: true, timestamp: new Date() });
     
     console.log(`✅ Conectado a impresora ${printerId}`);
@@ -465,95 +287,174 @@ app.post('/escpos/disconnect', async (req, res) => {
   }
 });
 
-// Endpoint para imprimir en impresora ESC/POS
-app.post('/escpos/print', async (req, res) => {
-  try {
-    const { items, tableNumber, customerName, timestamp, printerId } = req.body;
-    
-    console.log(`🖨️ ===== IMPRESIÓN ESC/POS =====`);
-    console.log(`🖨️ Impresora: ${printerId}`);
-    console.log(`🖨️ Mesa: ${tableNumber}`);
-    console.log(`🖨️ Cliente: ${customerName || 'Sin cliente'}`);
-    console.log(`🖨️ Productos: ${items.length}`);
-    
-    // Generar contenido ESC/POS
-    const escContent = generateESCContent(items, tableNumber, customerName);
-    
-    // Por ahora, simular impresión exitosa
-    // En una implementación real, aquí se enviaría a la impresora física
-    console.log('📄 Contenido ESC/POS generado:');
-    console.log(escContent);
-    
-    // Simular delay de impresión
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    console.log(`✅ Impresión ESC/POS completada en ${printerId}`);
-    
-    res.json({
-      success: true,
-      message: `Ticket impreso correctamente en ${printerId}`,
-      printerId: printerId,
-      itemsCount: items.length,
-      timestamp: new Date().toISOString()
-    });
-    
-  } catch (error) {
-    console.error('❌ Error imprimiendo ESC/POS:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-// Función para generar contenido ESC/POS
-function generateESCContent(items, tableNumber, customerName, restaurantName = 'Restaurante') {
+// Función para generar HTML optimizado para impresoras térmicas
+function generateThermalHTML(items, tableNumber, customerName, restaurantName = 'RESTAURANTE') {
   const timestamp = new Date().toLocaleString('es-ES');
   const total = items.reduce((sum, item) => sum + item.totalPrice, 0);
+  
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Ticket Térmico</title>
+    <style>
+        @page {
+            size: 80mm auto;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Courier New', monospace;
+            font-size: 42px;
+            line-height: 1.2;
+            margin: 0;
+            padding: 0;
+            width: 80mm;
+            max-width: 80mm;
+            background: white;
+            color: black;
+        }
+        
+        .ticket {
+            width: 100%;
+            box-sizing: border-box;
+        }
+        
+        .header {
+            text-align: center;
+            font-weight: bold;
+            font-size: 54px;
+            margin-bottom: 8mm;
+            text-transform: uppercase;
+        }
+        
+        .separator {
+            border-top: 6px solid #000;
+            margin: 4mm 0;
+            width: 100%;
+        }
+        
+        .info-line {
+            margin: 3mm 0;
+            font-size: 36px;
+        }
+        
+        .order-title {
+            text-align: center;
+            font-weight: bold;
+            font-size: 42px;
+            margin: 6mm 0;
+            text-transform: uppercase;
+        }
+        
+        .item {
+            margin: 4mm 0;
+        }
+        
+        .item-name {
+            font-weight: bold;
+            font-size: 36px;
+        }
+        
+        .item-price {
+            text-align: right;
+            font-size: 33px;
+            margin-top: 2mm;
+        }
+        
+        .total {
+            text-align: center;
+            font-weight: bold;
+            font-size: 48px;
+            margin: 8mm 0;
+            text-transform: uppercase;
+        }
+        
+        .thanks {
+            text-align: center;
+            font-weight: bold;
+            font-size: 42px;
+            margin: 10mm 0;
+            text-transform: uppercase;
+        }
+        
+        .spacer {
+            height: 8mm;
+        }
+    </style>
+</head>
+<body>
+    <div class="ticket">
+        <div class="header">${restaurantName}</div>
+        <div class="separator"></div>
+        
+        <div class="info-line">MESA: ${tableNumber}</div>
+        ${customerName ? `<div class="info-line">CLIENTE: ${customerName}</div>` : ''}
+        <div class="info-line">FECHA: ${timestamp}</div>
+        
+        <div class="separator"></div>
+        
+        <div class="order-title">PEDIDO:</div>
+        
+        ${items.map(item => `
+            <div class="item">
+                <div class="item-name">${item.quantity}x ${item.productName}</div>
+                <div class="item-price">${item.unitPrice.toFixed(2)} EUR x ${item.quantity} = ${item.totalPrice.toFixed(2)} EUR</div>
+            </div>
+        `).join('')}
+        
+        <div class="separator"></div>
+        
+        <div class="total">TOTAL: ${total.toFixed(2)} EUR</div>
+        
+        <div class="thanks">¡GRACIAS!</div>
+        
+        <div class="spacer"></div>
+    </div>
+</body>
+</html>`;
+}
 
-  // Comandos ESC/POS básicos
-  const commands = [
-    '\x1B\x40', // Initialize printer
-    '\x1B\x61\x01', // Center alignment
-    `\n${restaurantName.toUpperCase()}\n`,
-    '\x1B\x61\x00', // Left alignment
-    '\n',
-    `MESA: ${tableNumber}\n`,
-    customerName ? `CLIENTE: ${customerName.toUpperCase()}\n` : '',
-    `FECHA: ${timestamp}\n`,
-    '\n',
-    '\x1B\x45\x01', // Bold on
-    'PEDIDO:\n',
-    '\x1B\x45\x00', // Bold off
-    '\n'
-  ];
-
-  // Agregar items
-  items.forEach(item => {
-    commands.push(
-      `${item.quantity}x ${item.productName.toUpperCase()}\n`,
-      `   ${item.unitPrice.toFixed(2)}€ x ${item.quantity} = ${item.totalPrice.toFixed(2)}€\n`
-    );
+// Función para generar PDF con Puppeteer
+async function generatePDFWithPuppeteer(htmlContent, outputPath) {
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
-
-  // Agregar total
-  commands.push(
-    '\n',
-    '\x1B\x45\x01', // Bold on
-    `TOTAL: ${total.toFixed(2)}€\n`,
-    '\x1B\x45\x00', // Bold off
-    '\n',
-    '\x1B\x61\x01', // Center alignment
-    '¡GRACIAS!\n',
-    '\n',
-    '\x1B\x61\x00', // Left alignment
-    '\n',
-    '\n',
-    '\n',
-    '\x1D\x56\x00' // Cut paper
-  );
-
-  return commands.join('');
+  
+  try {
+    const page = await browser.newPage();
+    
+    // Configurar el contenido HTML
+    await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+    
+         // Generar PDF optimizado para impresoras térmicas
+     await page.pdf({
+       path: outputPath,
+       format: 'A4',
+       width: '80mm',
+       height: 'auto',
+       printBackground: true,
+       margin: {
+         top: '0mm',
+         right: '0mm',
+         bottom: '0mm',
+         left: '0mm'
+       },
+       preferCSSPageSize: false
+     });
+    
+    console.log('✅ PDF generado con Puppeteer:', outputPath);
+    return true;
+    
+  } catch (error) {
+    console.error('❌ Error generando PDF con Puppeteer:', error.message);
+    return false;
+  } finally {
+    await browser.close();
+  }
 }
 
 // Iniciar servidor
